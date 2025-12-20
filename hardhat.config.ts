@@ -23,6 +23,12 @@ export default defineConfig({
         },
     },
     networks: {
+        "mantle": {
+            type: "http",
+            chainType: "l1",
+            url: "https://rpc.mantle.xyz",
+            accounts: [process.env.EVM_PRIVATE_KEY!],
+        },
         "mantle-testnet": {
             type: "http",
             chainType: "l1",
