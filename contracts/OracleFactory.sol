@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.30;
+pragma solidity 0.8.30;
 
 import "./Oracle.sol";
 import "./OracleUtils.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract OracleFactory is Ownable {
+/// @title Coset Oracle Factory
+/// @author Halil Beycan
+/// @notice Official oracle factory implementation by Halil Beycan for Coset
+contract OracleFactory is Ownable, ReentrancyGuard {
     using OracleUtils for address;
 
     // developer addresses
@@ -17,6 +21,8 @@ contract OracleFactory is Ownable {
 
     address[] public oracleList;
 
+    uint256 public activeOracleCount;
+
     mapping(address => OracleInfo) public oracles;
 
     mapping(address => address[]) public providerOracles;
@@ -25,13 +31,13 @@ contract OracleFactory is Ownable {
     struct OracleInfo {
         address oracleAddress;
         address provider;
-        uint256 createdAt;
+        uint64 createdAt;
         bool isActive;
     }
 
     struct FactoryConfig {
-        uint256 oracleDeployPrice; // in wei
-        uint256 oracleFactoryShare; // percentage
+        uint128 oracleDeployPrice; // in wei
+        uint8 oracleFactoryShare; // percentage
     }
 
     // events
@@ -55,11 +61,19 @@ contract OracleFactory is Ownable {
         });
     }
 
-    function updateConfig(FactoryConfig memory _config) external onlyOwner {
-        config = FactoryConfig({
-            oracleDeployPrice: _config.oracleDeployPrice,
-            oracleFactoryShare: _config.oracleFactoryShare
-        });
+    modifier isOracleExists(address oracleAddress) {
+        if (oracles[oracleAddress].oracleAddress == address(0)) {
+            revert OracleUtils.OracleIsNotExist();
+        }
+        _;
+    }
+
+    function updateConfig(
+        uint128 _oracleDeployPrice,
+        uint8 _oracleFactoryShare
+    ) external onlyOwner {
+        config.oracleDeployPrice = _oracleDeployPrice;
+        config.oracleFactoryShare = _oracleFactoryShare;
     }
 
     function getConfig() external view returns (FactoryConfig memory) {
@@ -67,8 +81,7 @@ contract OracleFactory is Ownable {
     }
 
     function shareFundBetweenDevelopers(uint256 amount) private {
-        address[2] memory developers = [DEVELOPER_1, DEVELOPER_2];
-        uint256 share = amount / developers.length;
+        uint256 share = amount / 2;
         DEVELOPER_1.transferAmount(share);
         DEVELOPER_2.transferAmount(share);
     }
@@ -77,24 +90,35 @@ contract OracleFactory is Ownable {
         uint256 _recommendedUpdateDuration,
         uint256 _dataUpdatePrice,
         bytes calldata _initialData
-    ) external payable {
+    ) external payable nonReentrant {
         if (msg.value < config.oracleDeployPrice) {
             revert OracleUtils.InsufficientPayment(config.oracleDeployPrice, msg.value);
+        }
+
+        if (msg.value > config.oracleDeployPrice) {
+            revert OracleUtils.ExcessivePayment(config.oracleDeployPrice, msg.value);
         }
 
         address provider = msg.sender;
 
         address oracleAddress = address(
-            new Oracle(_recommendedUpdateDuration, _dataUpdatePrice, _initialData)
+            new Oracle(
+                _recommendedUpdateDuration,
+                _dataUpdatePrice,
+                _initialData,
+                provider,
+                address(this)
+            )
         );
 
         oracles[oracleAddress] = OracleInfo({
             oracleAddress: oracleAddress,
             provider: provider,
-            createdAt: block.timestamp,
+            createdAt: uint64(block.timestamp),
             isActive: true
         });
 
+        activeOracleCount++;
         oracleList.push(oracleAddress);
         providerOracles[provider].push(oracleAddress);
 
@@ -103,27 +127,33 @@ contract OracleFactory is Ownable {
         emit OracleDeployed(oracleAddress, provider, block.timestamp);
     }
 
-    function setOracleStatus(address oracleAddress, bool _isActive) external onlyOwner {
-        if (!oracles[oracleAddress].isActive) {
-            revert OracleUtils.OracleIsNotActive();
+    function setOracleStatus(
+        address oracleAddress,
+        bool _isActive
+    ) external onlyOwner isOracleExists(oracleAddress) {
+        bool old = oracles[oracleAddress].isActive;
+
+        if (old != _isActive) {
+            oracles[oracleAddress].isActive = _isActive;
+            _isActive ? activeOracleCount++ : activeOracleCount--;
+
+            Oracle(oracleAddress).setOracleStatus(_isActive);
+
+            emit OracleStatusChanged(
+                oracleAddress,
+                oracles[oracleAddress].provider,
+                _isActive,
+                block.timestamp
+            );
+        } else {
+            revert OracleUtils.NoStatusChange();
         }
-
-        oracles[oracleAddress].isActive = _isActive;
-
-        Oracle(oracleAddress).setOracleStatus(_isActive);
-
-        emit OracleStatusChanged(
-            oracleAddress,
-            oracles[oracleAddress].provider,
-            _isActive,
-            block.timestamp
-        );
     }
 
     function setOracleDataUpdatePrice(
         address oracleAddress,
         uint256 _dataUpdatePrice
-    ) external onlyOwner {
+    ) external onlyOwner isOracleExists(oracleAddress) {
         Oracle(oracleAddress).setDataUpdatePrice(_dataUpdatePrice);
     }
 
@@ -136,13 +166,7 @@ contract OracleFactory is Ownable {
     }
 
     function getActiveOracleCount() external view returns (uint256) {
-        uint256 count = 0;
-        for (uint256 i = 0; i < oracleList.length; i++) {
-            if (oracles[oracleList[i]].isActive) {
-                count++;
-            }
-        }
-        return count;
+        return activeOracleCount;
     }
 
     function getTotalOracleCount() external view returns (uint256) {
@@ -151,12 +175,19 @@ contract OracleFactory is Ownable {
 
     function getOracleInfo(
         address oracleAddress
-    ) external view returns (address provider, uint256 createdAt, bool isActive) {
+    )
+        external
+        view
+        isOracleExists(oracleAddress)
+        returns (address provider, uint64 createdAt, bool isActive)
+    {
         OracleInfo memory info = oracles[oracleAddress];
         return (info.provider, info.createdAt, info.isActive);
     }
 
     receive() external payable {
-        shareFundBetweenDevelopers(msg.value);
+        if (msg.value > 0) {
+            shareFundBetweenDevelopers(msg.value);
+        }
     }
 }

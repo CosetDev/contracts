@@ -1,20 +1,27 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.30;
+pragma solidity 0.8.30;
 
+/// @title Coset Oracle Utilities
+/// @author Halil Beycan
+/// @notice Utility library for Coset contracts
 library OracleUtils {
     // global errors
+    error NoStatusChange();
     error OracleIsNotActive();
     error OnlyFactoryCanCall();
     error OnlyProviderCanCall();
-    error OnlyFactoryOrProviderCanCall();
 
+    error OracleIsNotExist();
     error ZeroAmountProvided();
     error ZeroAddressProvided();
     error AmountTransferFailed();
+    error ProviderShouldBeEOA();
+    error FactoryShouldBeContract();
 
+    error ExcessivePayment(uint256 required, uint256 provided);
     error InsufficientPayment(uint256 required, uint256 provided);
 
-    function transferAmount(address _to, uint256 _amount) internal returns (bool) {
+    function transferAmount(address _to, uint256 _amount) internal {
         if (_to == address(0)) {
             revert OracleUtils.ZeroAddressProvided();
         }
@@ -28,7 +35,5 @@ library OracleUtils {
         if (!success) {
             revert OracleUtils.AmountTransferFailed();
         }
-
-        return true;
     }
 }

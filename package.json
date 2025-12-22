@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "hardhat compile",
     "test": "hardhat test",
     "node": "hardhat node",
+    "build": "hardhat compile",
     "reset": "rm -rf artifacts cache",
     "verify": "npx hardhat run scripts/verify.ts",
     "deploy:mainnet": "npx hardhat run scripts/deploy.ts --network mantle",

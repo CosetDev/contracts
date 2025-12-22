@@ -105,7 +105,7 @@ describe("Oracle", function () {
                     return null;
                 }
             })
-            .filter(log => log !== null && log.name === "Updated");
+            .filter(log => log !== null && log.name === "DataUpdated");
 
         expect(updatedEvents?.length).to.be.equal(1);
 
@@ -124,8 +124,20 @@ describe("Oracle", function () {
             .withArgs(oracle.lastUpdateTimestamp(), oracle.recommendedUpdateDuration());
     });
 
-    it("Deactivate the oracle by provider", async function () {
-        const tx = await oracle.connect(provider).setOracleStatus(false);
+    it("Try deactivate the oracle as provider", async function () {
+        await expect(oracle.connect(provider).setOracleStatus(false)).to.be.revertedWithCustomError(
+            oracle,
+            "OnlyFactoryCanCall"
+        );
+    });
+
+    it("Check active oracle counter before deactivation", async function () {
+        const activeOracles = await factory.getActiveOracleCount();
+        expect(activeOracles).to.equal(1);
+    });
+
+    it("Deactivate the oracle by factory", async function () {
+        const tx = await factory.connect(owner).setOracleStatus(oracle.getAddress(), false);
         await tx.wait();
 
         expect(await oracle.isActive()).to.equal(false);
@@ -137,6 +149,11 @@ describe("Oracle", function () {
         ).to.be.revertedWithCustomError(oracle, "OracleIsNotActive");
 
         await expect(oracle.getData()).to.be.revertedWithCustomError(oracle, "OracleIsNotActive");
+    });
+
+    it("Check active oracle counter after deactivation", async function () {
+        const activeOracles = await factory.getActiveOracleCount();
+        expect(activeOracles).to.equal(0);
     });
 
     it("Reactivate oracle by owner", async function () {
@@ -151,6 +168,11 @@ describe("Oracle", function () {
         );
 
         expect(fromBytes(await oracle.getDataWithoutCheck())).to.equal("Another data");
+    });
+
+    it("Check active oracle counter after reactivation", async function () {
+        const activeOracles = await factory.getActiveOracleCount();
+        expect(activeOracles).to.equal(1);
     });
 
     it("Test setRecommendedUpdateDuration by provider", async function () {
@@ -184,10 +206,7 @@ describe("Oracle", function () {
     });
 
     it("Update oracle config by owner", async function () {
-        const tx = await factory.connect(owner).updateConfig({
-            oracleDeployPrice: ethers.parseEther("0.06"),
-            oracleFactoryShare: 25,
-        });
+        const tx = await factory.connect(owner).updateConfig(ethers.parseEther("0.06"), 25);
         await tx.wait();
 
         const config = await factory.getConfig();
