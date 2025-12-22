@@ -8,13 +8,20 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 contract OracleFactory is Ownable {
     using OracleUtils for address;
 
-    // constants
-    uint256 public constant VERSION = 1;
-    uint256 public constant DATA_UPDATE_PRICE = 0.01 ether;
-    uint256 public constant ORACLE_DEPLOY_PRICE = 0.05 ether;
-    uint256 public constant ORACLE_PROVIDER_SHARE = 80; // percentage
-    address payable private constant DEVELOPER_1 = payable(0x3F2e72283f1E29b7cb4402511C41b60FB4900B57);
-    address payable private constant DEVELOPER_2 = payable(0xf0b5563971c60D2dc4407D1d85C9c3D2Fc06726e);
+    // developer addresses
+    address payable private constant DEVELOPER_1 =
+        payable(0x3F2e72283f1E29b7cb4402511C41b60FB4900B57);
+    address payable private constant DEVELOPER_2 =
+        payable(0xf0b5563971c60D2dc4407D1d85C9c3D2Fc06726e);
+
+    // variables
+    FactoryConfig public config;
+
+    address[] public oracleList;
+
+    mapping(address => OracleInfo) public oracles;
+
+    mapping(address => address[]) public providerOracles;
 
     // data structures
     struct OracleInfo {
@@ -24,9 +31,11 @@ contract OracleFactory is Ownable {
         bool isActive;
     }
 
-    address[] public oracleList;
-    mapping(address => OracleInfo) public oracles;
-    mapping(address => address[]) public providerOracles;
+    struct FactoryConfig {
+        uint256 dataUpdatePrice; // in wei
+        uint256 oracleDeployPrice; // in wei
+        uint256 oracleProviderShare; // percentage
+    }
 
     // events
     event OracleDeployed(
@@ -42,7 +51,25 @@ contract OracleFactory is Ownable {
         uint256 timestamp
     );
 
-    constructor(address payable _owner) Ownable(_owner) {}
+    constructor(address payable _owner) Ownable(_owner) {
+        config = FactoryConfig({
+            dataUpdatePrice: 0.01 ether,
+            oracleDeployPrice: 0.05 ether,
+            oracleProviderShare: 80 // percentage
+        });
+    }
+
+    function updateConfig(FactoryConfig memory _config) external onlyOwner {
+        config = FactoryConfig({
+            dataUpdatePrice: _config.dataUpdatePrice,
+            oracleDeployPrice: _config.oracleDeployPrice,
+            oracleProviderShare: _config.oracleProviderShare
+        });
+    }
+
+    function getConfig() external view returns (FactoryConfig memory) {
+        return config;
+    }
 
     function shareFundBetweenDevelopers(uint256 amount) private {
         owner().transferAmount(amount);
@@ -53,8 +80,8 @@ contract OracleFactory is Ownable {
         uint256 _recommendedUpdateDuration,
         string calldata _initialDataHash
     ) external payable {
-        if (msg.value < ORACLE_DEPLOY_PRICE) {
-            revert OracleUtils.InsufficientPayment(ORACLE_DEPLOY_PRICE, msg.value);
+        if (msg.value < config.oracleDeployPrice) {
+            revert OracleUtils.InsufficientPayment(config.oracleDeployPrice, msg.value);
         }
 
         address provider = msg.sender;
@@ -93,6 +120,10 @@ contract OracleFactory is Ownable {
 
     function getAllOracles() external view returns (address[] memory) {
         return oracleList;
+    }
+
+    function getProviderOracles(address provider) external view returns (address[] memory) {
+        return providerOracles[provider];
     }
 
     function getActiveOracleCount() external view returns (uint256) {

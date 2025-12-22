@@ -67,8 +67,10 @@ contract Oracle is ReentrancyGuard {
     }
 
     function update(string calldata _dataHash) external payable nonReentrant onlyWhenActive {
-        if (msg.value < factory.DATA_UPDATE_PRICE()) {
-            revert OracleUtils.InsufficientPayment(factory.DATA_UPDATE_PRICE(), msg.value);
+        OracleFactory.FactoryConfig memory config = factory.getConfig();
+
+        if (msg.value < config.dataUpdatePrice) {
+            revert OracleUtils.InsufficientPayment(config.dataUpdatePrice, msg.value);
         }
 
         uint256 ts = block.timestamp;
@@ -77,7 +79,7 @@ contract Oracle is ReentrancyGuard {
         dataHash = _dataHash;
 
         address factoryAddress = address(factory);
-        uint256 providerShare = factory.ORACLE_PROVIDER_SHARE();
+        uint256 providerShare = config.oracleProviderShare;
 
         uint256 providerAmount = (msg.value * providerShare) / 100;
         uint256 factoryAmount = msg.value - providerAmount;

@@ -170,4 +170,27 @@ describe("Oracle", function () {
         const factoryAddress = await oracle.getFactory();
         expect(factoryAddress).to.equal(await factory.getAddress());
     });
+
+    it("Get factory config", async function () {
+        const config = await factory.getConfig();
+        expect(config.dataUpdatePrice).to.equal(ethers.parseEther("0.01"));
+        expect(config.oracleDeployPrice).to.equal(ethers.parseEther("0.05"));
+        expect(config.oracleProviderShare).to.equal(80);
+    });
+
+    it("Update oracle config by owner", async function () {
+        const tx = await factory
+            .connect(owner)
+            .updateConfig({
+                dataUpdatePrice: ethers.parseEther("0.02"),
+                oracleDeployPrice: ethers.parseEther("0.06"),
+                oracleProviderShare: 70,
+            });
+        await tx.wait();
+
+        const config = await factory.getConfig();
+        expect(config.dataUpdatePrice).to.equal(ethers.parseEther("0.02"));
+        expect(config.oracleDeployPrice).to.equal(ethers.parseEther("0.06"));
+        expect(config.oracleProviderShare).to.equal(70);
+    });
 });
