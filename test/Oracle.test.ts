@@ -1,11 +1,20 @@
 import { expect } from "chai";
-import { network } from "hardhat";
 import { before } from "mocha";
+import { network } from "hardhat";
+import { BytesLike } from "ethers";
 import { Oracle } from "../types/ethers-contracts/Oracle.js";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types";
 import { OracleFactory } from "../types/ethers-contracts/OracleFactory.js";
 
 const { ethers, networkHelpers } = await network.connect();
+
+const toBytes = (str: string) => {
+    return ethers.toUtf8Bytes(str);
+};
+
+const fromBytes = (data: BytesLike) => {
+    return ethers.toUtf8String(data);
+};
 
 describe("Oracle", function () {
     let oracle: Oracle;
@@ -36,7 +45,7 @@ describe("Oracle", function () {
     it("Should deploy Oracle contract", async function () {
         const tx = await factory
             .connect(provider)
-            .deployOracle(10, "Initial data", { value: ethers.parseEther("0.05") });
+            .deployOracle(10, toBytes("Initial data"), { value: ethers.parseEther("0.05") });
 
         const receipt = await tx.wait();
 
@@ -54,12 +63,13 @@ describe("Oracle", function () {
 
         oracle = await ethers.getContractAt("Oracle", oracleAddress);
 
+        console.log(await oracle.getData());
         expect(await oracle.getProvider()).to.equal(provider.address);
-        expect(await oracle.getDataHash()).to.equal("Initial data");
+        expect(fromBytes(await oracle.getData())).to.equal("Initial data");
     });
 
     it("Should revert update bc didn't send enough ether", async function () {
-        await expect(oracle.connect(thirdPartyUser).update("Test data"))
+        await expect(oracle.connect(thirdPartyUser).update(toBytes("Test data")))
             .to.be.revertedWithCustomError(oracle, "InsufficientPayment")
             .withArgs(ethers.parseEther("0.01"), 0);
     });
@@ -67,11 +77,11 @@ describe("Oracle", function () {
     it("Should update data successfully", async function () {
         const tx = await oracle
             .connect(thirdPartyUser)
-            .update("Test data", { value: ethers.parseEther("0.01") });
+            .update(toBytes("Test data"), { value: ethers.parseEther("0.01") });
         await tx.wait();
 
-        const data = await oracle.getDataHash();
-        expect(data).to.equal("Test data");
+        const data = await oracle.getData();
+        expect(fromBytes(data)).to.equal("Test data");
     });
 
     it("Should have correct provider address", async function () {
@@ -82,7 +92,7 @@ describe("Oracle", function () {
     it("Should have update with correct event", async function () {
         const tx = await oracle
             .connect(thirdPartyUser)
-            .update("Another data", { value: ethers.parseEther("0.01") });
+            .update(toBytes("Another data"), { value: ethers.parseEther("0.01") });
 
         const receipt = await tx.wait();
 
@@ -101,8 +111,8 @@ describe("Oracle", function () {
         const event = updatedEvents?.[0]!;
         const newValue = event.args[0];
 
-        expect(newValue).to.equal("Another data");
-        expect(await oracle.getDataHash()).to.equal("Another data");
+        expect(fromBytes(newValue)).to.equal("Another data");
+        expect(fromBytes(await oracle.getData())).to.equal("Another data");
     });
 
     it("Owner balance should be 10000.004", async function () {
@@ -112,7 +122,7 @@ describe("Oracle", function () {
     it("Wait for 15 seconds to test data not updated recently revert", async function () {
         await networkHelpers.time.increase(11);
 
-        await expect(oracle.getDataHash())
+        await expect(oracle.getData())
             .to.be.revertedWithCustomError(oracle, "DataNotUpdatedRecently")
             .withArgs(oracle.lastUpdateTimestamp(), oracle.recommendedUpdateDuration());
     });
@@ -124,13 +134,12 @@ describe("Oracle", function () {
         expect(await oracle.isActive()).to.equal(false);
 
         await expect(
-            oracle.connect(thirdPartyUser).update("Test data", { value: ethers.parseEther("0.01") })
+            oracle
+                .connect(thirdPartyUser)
+                .update(toBytes("Test data"), { value: ethers.parseEther("0.01") })
         ).to.be.revertedWithCustomError(oracle, "OracleIsNotActive");
 
-        await expect(oracle.getDataHash()).to.be.revertedWithCustomError(
-            oracle,
-            "OracleIsNotActive"
-        );
+        await expect(oracle.getData()).to.be.revertedWithCustomError(oracle, "OracleIsNotActive");
     });
 
     it("Reactivate oracle by owner", async function () {
@@ -139,12 +148,12 @@ describe("Oracle", function () {
 
         expect(await oracle.isActive()).to.equal(true);
 
-        await expect(oracle.getDataHash()).to.be.revertedWithCustomError(
+        await expect(oracle.getData()).to.be.revertedWithCustomError(
             oracle,
             "DataNotUpdatedRecently"
         );
 
-        expect(await oracle.getDataHashWithoutCheck()).to.equal("Another data");
+        expect(fromBytes(await oracle.getDataWithoutCheck())).to.equal("Another data");
     });
 
     it("Test setRecommendedUpdateDuration by provider", async function () {
@@ -179,13 +188,11 @@ describe("Oracle", function () {
     });
 
     it("Update oracle config by owner", async function () {
-        const tx = await factory
-            .connect(owner)
-            .updateConfig({
-                dataUpdatePrice: ethers.parseEther("0.02"),
-                oracleDeployPrice: ethers.parseEther("0.06"),
-                oracleProviderShare: 70,
-            });
+        const tx = await factory.connect(owner).updateConfig({
+            dataUpdatePrice: ethers.parseEther("0.02"),
+            oracleDeployPrice: ethers.parseEther("0.06"),
+            oracleProviderShare: 70,
+        });
         await tx.wait();
 
         const config = await factory.getConfig();

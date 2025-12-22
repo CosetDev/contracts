@@ -78,7 +78,7 @@ contract OracleFactory is Ownable {
 
     function deployOracle(
         uint256 _recommendedUpdateDuration,
-        string calldata _initialDataHash
+        bytes calldata _initialData
     ) external payable {
         if (msg.value < config.oracleDeployPrice) {
             revert OracleUtils.InsufficientPayment(config.oracleDeployPrice, msg.value);
@@ -86,7 +86,7 @@ contract OracleFactory is Ownable {
 
         address provider = msg.sender;
 
-        address oracleAddress = address(new Oracle(_recommendedUpdateDuration, _initialDataHash));
+        address oracleAddress = address(new Oracle(_recommendedUpdateDuration, _initialData));
 
         oracles[oracleAddress] = OracleInfo({
             oracleAddress: oracleAddress,

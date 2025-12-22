@@ -11,7 +11,7 @@ contract Oracle is ReentrancyGuard {
     // variables
     bool public isActive = true;
 
-    string private dataHash;
+    bytes private data;
 
     uint256 public lastUpdateTimestamp;
 
@@ -22,16 +22,16 @@ contract Oracle is ReentrancyGuard {
     OracleFactory public immutable factory;
 
     // events
-    event Updated(string data, uint256 timestamp);
+    event Updated(bytes data, uint256 timestamp);
 
     // errors
     error NoDataAvailable();
 
     error DataNotUpdatedRecently(uint256 lastUpdateTimestamp, uint256 recommendedUpdateDuration);
 
-    constructor(uint256 _recommendedUpdateDuration, string memory _initialDataHash) {
+    constructor(uint256 _recommendedUpdateDuration, bytes memory _initialData) {
+        data = _initialData;
         provider = tx.origin;
-        dataHash = _initialDataHash;
         lastUpdateTimestamp = block.timestamp;
         factory = OracleFactory(payable(msg.sender));
         recommendedUpdateDuration = _recommendedUpdateDuration;
@@ -66,17 +66,17 @@ contract Oracle is ReentrancyGuard {
         recommendedUpdateDuration = _duration;
     }
 
-    function update(string calldata _dataHash) external payable nonReentrant onlyWhenActive {
+    function update(bytes calldata _data) external payable nonReentrant onlyWhenActive {
         OracleFactory.FactoryConfig memory config = factory.getConfig();
 
         if (msg.value < config.dataUpdatePrice) {
             revert OracleUtils.InsufficientPayment(config.dataUpdatePrice, msg.value);
         }
 
+        data = _data;
+
         uint256 ts = block.timestamp;
         lastUpdateTimestamp = ts;
-
-        dataHash = _dataHash;
 
         address factoryAddress = address(factory);
         uint256 providerShare = config.oracleProviderShare;
@@ -87,26 +87,26 @@ contract Oracle is ReentrancyGuard {
         provider.transferAmount(providerAmount);
         factoryAddress.transferAmount(factoryAmount);
 
-        emit Updated(dataHash, ts);
+        emit Updated(data, ts);
     }
 
-    function _getDataHash() private view returns (string memory) {
-        if (bytes(dataHash).length == 0) {
+    function _getData() private view returns (bytes memory) {
+        if (bytes(data).length == 0) {
             revert NoDataAvailable();
         }
 
-        return dataHash;
+        return data;
     }
 
-    function getDataHash() external view onlyWhenActive returns (string memory) {
+    function getData() external view onlyWhenActive returns (bytes memory) {
         if (block.timestamp - lastUpdateTimestamp > recommendedUpdateDuration) {
             revert DataNotUpdatedRecently(lastUpdateTimestamp, recommendedUpdateDuration);
         }
-        return _getDataHash();
+        return _getData();
     }
 
-    function getDataHashWithoutCheck() external view onlyWhenActive returns (string memory) {
-        return _getDataHash();
+    function getDataWithoutCheck() external view onlyWhenActive returns (bytes memory) {
+        return _getData();
     }
 
     function getBlockTimestamp() external view returns (uint256) {
