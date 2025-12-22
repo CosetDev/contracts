@@ -116,10 +116,6 @@ describe("Oracle", function () {
         expect(fromBytes(await oracle.getData())).to.equal("Another data");
     });
 
-    it("Owner balance should be 10000.004", async function () {
-        expect(await getBalance(owner)).to.equal("10000.004");
-    });
-
     it("Wait for 15 seconds to test data not updated recently revert", async function () {
         await networkHelpers.time.increase(11);
 

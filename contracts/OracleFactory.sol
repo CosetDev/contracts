@@ -9,10 +9,8 @@ contract OracleFactory is Ownable {
     using OracleUtils for address;
 
     // developer addresses
-    address payable private constant DEVELOPER_1 =
-        payable(0x3F2e72283f1E29b7cb4402511C41b60FB4900B57);
-    address payable private constant DEVELOPER_2 =
-        payable(0xf0b5563971c60D2dc4407D1d85C9c3D2Fc06726e);
+    address private constant DEVELOPER_1 = 0x3F2e72283f1E29b7cb4402511C41b60FB4900B57;
+    address private constant DEVELOPER_2 = 0xf0b5563971c60D2dc4407D1d85C9c3D2Fc06726e;
 
     // variables
     FactoryConfig public config;
@@ -69,8 +67,10 @@ contract OracleFactory is Ownable {
     }
 
     function shareFundBetweenDevelopers(uint256 amount) private {
-        owner().transferAmount(amount);
-        // TODO: add transfer to multiple developers
+        address[2] memory developers = [DEVELOPER_1, DEVELOPER_2];
+        uint256 share = amount / developers.length;
+        DEVELOPER_1.transferAmount(share);
+        DEVELOPER_2.transferAmount(share);
     }
 
     function deployOracle(
@@ -97,6 +97,8 @@ contract OracleFactory is Ownable {
 
         oracleList.push(oracleAddress);
         providerOracles[provider].push(oracleAddress);
+
+        shareFundBetweenDevelopers(msg.value);
 
         emit OracleDeployed(oracleAddress, provider, block.timestamp);
     }
