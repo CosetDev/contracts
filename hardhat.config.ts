@@ -1,11 +1,12 @@
 import dotenv from "dotenv";
 import { defineConfig } from "hardhat/config";
+import hardhatVerify from "@nomicfoundation/hardhat-verify";
 import hardhatToolboxMochaEthersPlugin from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
 
 dotenv.config();
 
 export default defineConfig({
-    plugins: [hardhatToolboxMochaEthersPlugin],
+    plugins: [hardhatVerify, hardhatToolboxMochaEthersPlugin],
     solidity: {
         profiles: {
             default: {
@@ -22,17 +23,24 @@ export default defineConfig({
             },
         },
     },
+    verify: {
+        etherscan: {
+            apiKey: process.env.ETHERSCAN_API_KEY!,
+        },
+    },
     networks: {
-        "mantle": {
+        mantle: {
+            chainId: 5000,
             type: "http",
             chainType: "l1",
             url: "https://rpc.mantle.xyz",
             accounts: [process.env.EVM_PRIVATE_KEY!],
         },
         "mantle-testnet": {
+            chainId: 5003,
             type: "http",
             chainType: "l1",
-            url: "https://rpc.testnet.mantle.xyz",
+            url: "https://rpc.sepolia.mantle.xyz",
             accounts: [process.env.EVM_PRIVATE_KEY!],
         },
     },

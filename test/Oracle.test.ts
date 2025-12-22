@@ -6,7 +6,7 @@ import { Oracle } from "../types/ethers-contracts/Oracle.js";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types";
 import { OracleFactory } from "../types/ethers-contracts/OracleFactory.js";
 
-const { ethers, networkHelpers } = await network.connect();
+const { ethers, networkHelpers, networkName } = await network.connect();
 
 const toBytes = (str: string) => {
     return ethers.toUtf8Bytes(str);
@@ -65,7 +65,6 @@ describe("Oracle", function () {
 
         oracle = await ethers.getContractAt("Oracle", oracleAddress);
 
-        console.log(await oracle.getData());
         expect(await oracle.getProvider()).to.equal(provider.address);
         expect(fromBytes(await oracle.getData())).to.equal("Initial data");
     });
