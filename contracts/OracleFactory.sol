@@ -32,9 +32,8 @@ contract OracleFactory is Ownable {
     }
 
     struct FactoryConfig {
-        uint256 dataUpdatePrice; // in wei
         uint256 oracleDeployPrice; // in wei
-        uint256 oracleProviderShare; // percentage
+        uint256 oracleFactoryShare; // percentage
     }
 
     // events
@@ -53,17 +52,15 @@ contract OracleFactory is Ownable {
 
     constructor(address payable _owner) Ownable(_owner) {
         config = FactoryConfig({
-            dataUpdatePrice: 0.01 ether,
             oracleDeployPrice: 0.05 ether,
-            oracleProviderShare: 80 // percentage
+            oracleFactoryShare: 20 // percentage
         });
     }
 
     function updateConfig(FactoryConfig memory _config) external onlyOwner {
         config = FactoryConfig({
-            dataUpdatePrice: _config.dataUpdatePrice,
             oracleDeployPrice: _config.oracleDeployPrice,
-            oracleProviderShare: _config.oracleProviderShare
+            oracleFactoryShare: _config.oracleFactoryShare
         });
     }
 
@@ -78,6 +75,7 @@ contract OracleFactory is Ownable {
 
     function deployOracle(
         uint256 _recommendedUpdateDuration,
+        uint256 _dataUpdatePrice,
         bytes calldata _initialData
     ) external payable {
         if (msg.value < config.oracleDeployPrice) {
@@ -86,7 +84,9 @@ contract OracleFactory is Ownable {
 
         address provider = msg.sender;
 
-        address oracleAddress = address(new Oracle(_recommendedUpdateDuration, _initialData));
+        address oracleAddress = address(
+            new Oracle(_recommendedUpdateDuration, _dataUpdatePrice, _initialData)
+        );
 
         oracles[oracleAddress] = OracleInfo({
             oracleAddress: oracleAddress,
@@ -116,6 +116,13 @@ contract OracleFactory is Ownable {
             _isActive,
             block.timestamp
         );
+    }
+
+    function setOracleDataUpdatePrice(
+        address oracleAddress,
+        uint256 _dataUpdatePrice
+    ) external onlyOwner {
+        Oracle(oracleAddress).setDataUpdatePrice(_dataUpdatePrice);
     }
 
     function getAllOracles() external view returns (address[] memory) {

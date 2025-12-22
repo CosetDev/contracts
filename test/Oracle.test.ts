@@ -45,7 +45,9 @@ describe("Oracle", function () {
     it("Should deploy Oracle contract", async function () {
         const tx = await factory
             .connect(provider)
-            .deployOracle(10, toBytes("Initial data"), { value: ethers.parseEther("0.05") });
+            .deployOracle(10, ethers.parseEther("0.01"), ethers.toUtf8Bytes("Initial data"), {
+                value: ethers.parseEther("0.05"),
+            });
 
         const receipt = await tx.wait();
 
@@ -182,22 +184,42 @@ describe("Oracle", function () {
 
     it("Get factory config", async function () {
         const config = await factory.getConfig();
-        expect(config.dataUpdatePrice).to.equal(ethers.parseEther("0.01"));
         expect(config.oracleDeployPrice).to.equal(ethers.parseEther("0.05"));
-        expect(config.oracleProviderShare).to.equal(80);
+        expect(config.oracleFactoryShare).to.equal(20);
     });
 
     it("Update oracle config by owner", async function () {
         const tx = await factory.connect(owner).updateConfig({
-            dataUpdatePrice: ethers.parseEther("0.02"),
             oracleDeployPrice: ethers.parseEther("0.06"),
-            oracleProviderShare: 70,
+            oracleFactoryShare: 25,
         });
         await tx.wait();
 
         const config = await factory.getConfig();
-        expect(config.dataUpdatePrice).to.equal(ethers.parseEther("0.02"));
         expect(config.oracleDeployPrice).to.equal(ethers.parseEther("0.06"));
-        expect(config.oracleProviderShare).to.equal(70);
+        expect(config.oracleFactoryShare).to.equal(25);
+    });
+
+    it("Provider can't update data update price by oracle", async function () {
+        await expect(
+            oracle.connect(provider).setDataUpdatePrice(ethers.parseEther("0.02"))
+        ).to.be.revertedWithCustomError(oracle, "OnlyFactoryCanCall");
+    });
+
+    it("Provider can't update data update price by factory", async function () {
+        await expect(
+            factory
+                .connect(provider)
+                .setOracleDataUpdatePrice(oracle.getAddress(), ethers.parseEther("0.02"))
+        ).to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
+    });
+
+    it("Factory can update data update price", async function () {
+        const tx = await factory
+            .connect(owner)
+            .setOracleDataUpdatePrice(oracle.getAddress(), ethers.parseEther("0.02"));
+        await tx.wait();
+
+        expect(await oracle.dataUpdatePrice()).to.equal(ethers.parseEther("0.02"));
     });
 });

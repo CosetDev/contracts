@@ -13,6 +13,8 @@ contract Oracle is ReentrancyGuard {
 
     bytes private data;
 
+    uint256 public dataUpdatePrice;
+
     uint256 public lastUpdateTimestamp;
 
     uint256 public recommendedUpdateDuration;
@@ -29,9 +31,14 @@ contract Oracle is ReentrancyGuard {
 
     error DataNotUpdatedRecently(uint256 lastUpdateTimestamp, uint256 recommendedUpdateDuration);
 
-    constructor(uint256 _recommendedUpdateDuration, bytes memory _initialData) {
+    constructor(
+        uint256 _recommendedUpdateDuration,
+        uint256 _dataUpdatePrice,
+        bytes memory _initialData
+    ) {
         data = _initialData;
         provider = tx.origin;
+        dataUpdatePrice = _dataUpdatePrice;
         lastUpdateTimestamp = block.timestamp;
         factory = OracleFactory(payable(msg.sender));
         recommendedUpdateDuration = _recommendedUpdateDuration;
@@ -40,6 +47,13 @@ contract Oracle is ReentrancyGuard {
     modifier onlyProvider() {
         if (msg.sender != provider) {
             revert OracleUtils.OnlyProviderCanCall();
+        }
+        _;
+    }
+
+    modifier onlyFactory() {
+        if (msg.sender != address(factory)) {
+            revert OracleUtils.OnlyFactoryCanCall();
         }
         _;
     }
@@ -66,11 +80,15 @@ contract Oracle is ReentrancyGuard {
         recommendedUpdateDuration = _duration;
     }
 
+    function setDataUpdatePrice(uint256 _price) external onlyFactory {
+        dataUpdatePrice = _price;
+    }
+
     function update(bytes calldata _data) external payable nonReentrant onlyWhenActive {
         OracleFactory.FactoryConfig memory config = factory.getConfig();
 
-        if (msg.value < config.dataUpdatePrice) {
-            revert OracleUtils.InsufficientPayment(config.dataUpdatePrice, msg.value);
+        if (msg.value < dataUpdatePrice) {
+            revert OracleUtils.InsufficientPayment(dataUpdatePrice, msg.value);
         }
 
         data = _data;
@@ -79,10 +97,10 @@ contract Oracle is ReentrancyGuard {
         lastUpdateTimestamp = ts;
 
         address factoryAddress = address(factory);
-        uint256 providerShare = config.oracleProviderShare;
+        uint256 factoryShare = config.oracleFactoryShare;
 
-        uint256 providerAmount = (msg.value * providerShare) / 100;
-        uint256 factoryAmount = msg.value - providerAmount;
+        uint256 factoryAmount = (msg.value * factoryShare) / 100;
+        uint256 providerAmount = msg.value - factoryAmount;
 
         provider.transferAmount(providerAmount);
         factoryAddress.transferAmount(factoryAmount);
