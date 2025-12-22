@@ -117,5 +117,57 @@ describe("Oracle", function () {
             .withArgs(oracle.lastUpdateTimestamp(), oracle.recommendedUpdateDuration());
     });
 
-    // TODO: add other tests like onlyWhenActive, onlyProvider vb.
+    it("Deactivate the oracle by provider", async function () {
+        const tx = await oracle.connect(provider).setOracleStatus(false);
+        await tx.wait();
+
+        expect(await oracle.isActive()).to.equal(false);
+
+        await expect(
+            oracle.connect(thirdPartyUser).update("Test data", { value: ethers.parseEther("0.01") })
+        ).to.be.revertedWithCustomError(oracle, "OracleIsNotActive");
+
+        await expect(oracle.getDataHash()).to.be.revertedWithCustomError(
+            oracle,
+            "OracleIsNotActive"
+        );
+    });
+
+    it("Reactivate oracle by owner", async function () {
+        const tx = await factory.connect(owner).setOracleStatus(oracle.getAddress(), true);
+        await tx.wait();
+
+        expect(await oracle.isActive()).to.equal(true);
+
+        await expect(oracle.getDataHash()).to.be.revertedWithCustomError(
+            oracle,
+            "DataNotUpdatedRecently"
+        );
+
+        expect(await oracle.getDataHashWithoutCheck()).to.equal("Another data");
+    });
+
+    it("Test setRecommendedUpdateDuration by provider", async function () {
+        const tx = await oracle.connect(provider).setRecommendedUpdateDuration(20);
+        await tx.wait();
+
+        expect(await oracle.recommendedUpdateDuration()).to.equal(20);
+    });
+
+    it("Test setRecommendedUpdateDuration revert by third party user", async function () {
+        await expect(
+            oracle.connect(thirdPartyUser).setRecommendedUpdateDuration(30)
+        ).to.be.revertedWithCustomError(oracle, "OnlyProviderCanCall");
+    });
+
+    it("Get oracle info from factory", async function () {
+        const info = await factory.getOracleInfo(oracle.getAddress());
+        expect(info.provider).to.equal(provider.address);
+        expect(info.isActive).to.equal(true);
+    });
+
+    it("Should have correct factory address", async function () {
+        const factoryAddress = await oracle.getFactory();
+        expect(factoryAddress).to.equal(await factory.getAddress());
+    });
 });

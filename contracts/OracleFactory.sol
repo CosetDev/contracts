@@ -8,14 +8,15 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 contract OracleFactory is Ownable {
     using OracleUtils for address;
 
+    // constants
     uint256 public constant VERSION = 1;
+    uint256 public constant DATA_UPDATE_PRICE = 0.01 ether;
+    uint256 public constant ORACLE_DEPLOY_PRICE = 0.05 ether;
+    uint256 public constant ORACLE_PROVIDER_SHARE = 80; // percentage
+    address payable private constant DEVELOPER_1 = payable(0x3F2e72283f1E29b7cb4402511C41b60FB4900B57);
+    address payable private constant DEVELOPER_2 = payable(0xf0b5563971c60D2dc4407D1d85C9c3D2Fc06726e);
 
-    uint256 public dataUpdatePrice = 0.01 ether;
-
-    uint256 public oracleCreationPrice = 0.05 ether;
-
-    uint256 public oracleProviderShare = 80; // percentage
-
+    // data structures
     struct OracleInfo {
         address oracleAddress;
         address provider;
@@ -34,24 +35,26 @@ contract OracleFactory is Ownable {
         uint256 timestamp
     );
 
-    event OracleDeactivated(
+    event OracleStatusChanged(
         address indexed oracleAddress,
         address indexed provider,
+        bool newOracleStatus,
         uint256 timestamp
     );
 
     constructor(address payable _owner) Ownable(_owner) {}
 
-    function shareFundBetweenOwners(uint256 amount) internal {
+    function shareFundBetweenDevelopers(uint256 amount) private {
         owner().transferAmount(amount);
+        // TODO: add transfer to multiple developers
     }
 
     function deployOracle(
         uint256 _recommendedUpdateDuration,
         string calldata _initialDataHash
     ) external payable {
-        if (msg.value < oracleCreationPrice) {
-            revert OracleUtils.InsufficientPayment(oracleCreationPrice, msg.value);
+        if (msg.value < ORACLE_DEPLOY_PRICE) {
+            revert OracleUtils.InsufficientPayment(ORACLE_DEPLOY_PRICE, msg.value);
         }
 
         address provider = msg.sender;
@@ -71,16 +74,21 @@ contract OracleFactory is Ownable {
         emit OracleDeployed(oracleAddress, provider, block.timestamp);
     }
 
-    function deactivateOracle(address oracleAddress) external onlyOwner {
+    function setOracleStatus(address oracleAddress, bool _isActive) external onlyOwner {
         if (!oracles[oracleAddress].isActive) {
             revert OracleUtils.OracleIsNotActive();
         }
 
-        oracles[oracleAddress].isActive = false;
+        oracles[oracleAddress].isActive = _isActive;
 
-        Oracle(oracleAddress).setOracleStatus(false);
+        Oracle(oracleAddress).setOracleStatus(_isActive);
 
-        emit OracleDeactivated(oracleAddress, oracles[oracleAddress].provider, block.timestamp);
+        emit OracleStatusChanged(
+            oracleAddress,
+            oracles[oracleAddress].provider,
+            _isActive,
+            block.timestamp
+        );
     }
 
     function getAllOracles() external view returns (address[] memory) {
@@ -109,6 +117,6 @@ contract OracleFactory is Ownable {
     }
 
     receive() external payable {
-        shareFundBetweenOwners(msg.value);
+        shareFundBetweenDevelopers(msg.value);
     }
 }

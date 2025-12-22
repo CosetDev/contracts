@@ -8,20 +8,23 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 contract Oracle is ReentrancyGuard {
     using OracleUtils for address;
 
+    // variables
     bool public isActive = true;
 
     string private dataHash;
-
-    address public immutable provider;
-
-    OracleFactory public immutable factory;
 
     uint256 public lastUpdateTimestamp;
 
     uint256 public recommendedUpdateDuration;
 
+    // oracle provider and factory
+    address public immutable provider;
+    OracleFactory public immutable factory;
+
+    // events
     event Updated(string data, uint256 timestamp);
 
+    // errors
     error NoDataAvailable();
 
     error DataNotUpdatedRecently(uint256 lastUpdateTimestamp, uint256 recommendedUpdateDuration);
@@ -37,13 +40,6 @@ contract Oracle is ReentrancyGuard {
     modifier onlyProvider() {
         if (msg.sender != provider) {
             revert OracleUtils.OnlyProviderCanCall();
-        }
-        _;
-    }
-
-    modifier onlyFactory() {
-        if (msg.sender != address(factory)) {
-            revert OracleUtils.OnlyFactoryCanCall();
         }
         _;
     }
@@ -71,8 +67,8 @@ contract Oracle is ReentrancyGuard {
     }
 
     function update(string calldata _dataHash) external payable nonReentrant onlyWhenActive {
-        if (msg.value < factory.dataUpdatePrice()) {
-            revert OracleUtils.InsufficientPayment(factory.dataUpdatePrice(), msg.value);
+        if (msg.value < factory.DATA_UPDATE_PRICE()) {
+            revert OracleUtils.InsufficientPayment(factory.DATA_UPDATE_PRICE(), msg.value);
         }
 
         uint256 ts = block.timestamp;
@@ -81,7 +77,7 @@ contract Oracle is ReentrancyGuard {
         dataHash = _dataHash;
 
         address factoryAddress = address(factory);
-        uint256 providerShare = factory.oracleProviderShare();
+        uint256 providerShare = factory.ORACLE_PROVIDER_SHARE();
 
         uint256 providerAmount = (msg.value * providerShare) / 100;
         uint256 factoryAmount = msg.value - providerAmount;
@@ -92,7 +88,7 @@ contract Oracle is ReentrancyGuard {
         emit Updated(dataHash, ts);
     }
 
-    function _getDataHash() internal view onlyWhenActive returns (string memory) {
+    function _getDataHash() private view returns (string memory) {
         if (bytes(dataHash).length == 0) {
             revert NoDataAvailable();
         }
@@ -100,14 +96,14 @@ contract Oracle is ReentrancyGuard {
         return dataHash;
     }
 
-    function getDataHash() external view returns (string memory) {
+    function getDataHash() external view onlyWhenActive returns (string memory) {
         if (block.timestamp - lastUpdateTimestamp > recommendedUpdateDuration) {
             revert DataNotUpdatedRecently(lastUpdateTimestamp, recommendedUpdateDuration);
         }
         return _getDataHash();
     }
 
-    function getDataHashWithoutCheck() external view returns (string memory) {
+    function getDataHashWithoutCheck() external view onlyWhenActive returns (string memory) {
         return _getDataHash();
     }
 
@@ -117,5 +113,9 @@ contract Oracle is ReentrancyGuard {
 
     function getProvider() external view returns (address) {
         return provider;
+    }
+
+    function getFactory() external view returns (address) {
+        return address(factory);
     }
 }
