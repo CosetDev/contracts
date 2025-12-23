@@ -34,6 +34,10 @@ describe("Oracle", function () {
 
     let thirdPartyUser: HardhatEthersSigner;
 
+    const dateUpdatePrice = ethers.parseEther("0.01");
+
+    const dataUpdatePriceUp = ethers.parseEther("0.02");
+
     const getBalance = async (signer: HardhatEthersSigner) => {
         const wei = await signer.provider?.getBalance(signer.address);
         return ethers.formatEther(wei!);
@@ -50,7 +54,7 @@ describe("Oracle", function () {
     it("Should deploy Oracle contract", async function () {
         const tx = await factory
             .connect(provider)
-            .deployOracle(10, ethers.parseEther("0.01"), ethers.toUtf8Bytes("Initial data"), {
+            .deployOracle(10, dateUpdatePrice, ethers.toUtf8Bytes("Initial data"), {
                 value: ethers.parseEther("0.05"),
             });
 
@@ -83,44 +87,52 @@ describe("Oracle", function () {
         await expect(
             factory
                 .connect(provider)
-                .deployOracle(10, ethers.parseEther("0.01"), ethers.toUtf8Bytes("Initial data"), {
+                .deployOracle(10, dateUpdatePrice, ethers.toUtf8Bytes("Initial data"), {
                     value: ethers.parseEther("0.06"),
                 })
         ).to.be.revertedWithCustomError(factory, "ExcessivePayment");
     });
 
-    it("Should revert update bc not provider", async function () {
+    it("Should revert update bc not factory", async function () {
         await expect(
             oracle.connect(thirdPartyUser).updateData(toBytes("Test data"))
-        ).to.be.revertedWithCustomError(oracle, "OnlyProviderCanCall");
+        ).to.be.revertedWithCustomError(oracle, "OnlyFactoryCanCall");
     });
 
     it("Should revert update bc didn't send enough ether", async function () {
-        await expect(oracle.connect(provider).updateData(toBytes("Test data")))
+        await expect(
+            factory.connect(owner).updateOracleData(await oracle.getAddress(), toBytes("Test data"))
+        )
             .to.be.revertedWithCustomError(oracle, "InsufficientPayment")
-            .withArgs(ethers.parseEther("0.002"), 0);
+            .withArgs(dateUpdatePrice, 0);
     });
 
     it("Should revert update bc sent excess ether", async function () {
         await expect(
-            oracle
-                .connect(provider)
-                .updateData(toBytes("Test data"), { value: ethers.parseEther("0.003") })
+            factory
+                .connect(owner)
+                .updateOracleData(await oracle.getAddress(), toBytes("Test data"), {
+                    value: dataUpdatePriceUp,
+                })
         )
             .to.be.revertedWithCustomError(oracle, "ExcessivePayment")
-            .withArgs(ethers.parseEther("0.002"), ethers.parseEther("0.003"));
+            .withArgs(dateUpdatePrice, dataUpdatePriceUp);
     });
 
     it("Should revert update bc empty data", async function () {
         await expect(
-            oracle.connect(provider).updateData(toBytes(""), { value: ethers.parseEther("0.002") })
+            factory.connect(owner).updateOracleData(await oracle.getAddress(), toBytes(""), {
+                value: dateUpdatePrice,
+            })
         ).to.be.revertedWithCustomError(oracle, "YouCantSetEmptyData");
     });
 
     it("Should update data successfully", async function () {
-        const tx = await oracle
-            .connect(provider)
-            .updateData(toBytes("Test data"), { value: ethers.parseEther("0.002") });
+        const tx = await factory
+            .connect(owner)
+            .updateOracleData(await oracle.getAddress(), toBytes("Test data"), {
+                value: dateUpdatePrice,
+            });
         await tx.wait();
 
         const data = await oracle.getData();
@@ -138,9 +150,11 @@ describe("Oracle", function () {
     });
 
     it("Should have update with correct event", async function () {
-        const tx = await oracle
-            .connect(provider)
-            .updateData(toBytes("Another data"), { value: ethers.parseEther("0.002") });
+        const tx = await factory
+            .connect(owner)
+            .updateOracleData(await oracle.getAddress(), toBytes("Another data"), {
+                value: dateUpdatePrice,
+            });
 
         const receipt = await tx.wait();
 
@@ -268,7 +282,7 @@ describe("Oracle", function () {
 
     it("Provider can't update data update price by oracle", async function () {
         await expect(
-            oracle.connect(provider).setDataUpdatePrice(ethers.parseEther("0.02"))
+            oracle.connect(provider).setDataUpdatePrice(dataUpdatePriceUp)
         ).to.be.revertedWithCustomError(oracle, "OnlyFactoryCanCall");
     });
 
@@ -276,32 +290,34 @@ describe("Oracle", function () {
         await expect(
             factory
                 .connect(provider)
-                .setOracleDataUpdatePrice(oracle.getAddress(), ethers.parseEther("0.02"))
+                .setOracleDataUpdatePrice(oracle.getAddress(), dataUpdatePriceUp)
         ).to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
     });
 
     it("Factory can update data update price", async function () {
         const tx = await factory
             .connect(owner)
-            .setOracleDataUpdatePrice(oracle.getAddress(), ethers.parseEther("0.02"));
+            .setOracleDataUpdatePrice(oracle.getAddress(), dataUpdatePriceUp);
         await tx.wait();
 
-        expect(await oracle.dataUpdatePrice()).to.equal(ethers.parseEther("0.02"));
+        expect(await oracle.dataUpdatePrice()).to.equal(dataUpdatePriceUp);
     });
 
     it("Should revert update bc too large data", async function () {
         await expect(
-            oracle.connect(provider).updateData(toBytes(JSON.stringify(jsonOver5KB)), {
-                value: ethers.parseEther("0.005"),
-            })
+            factory
+                .connect(owner)
+                .updateOracleData(await oracle.getAddress(), toBytes(JSON.stringify(jsonOver5KB)), {
+                    value: dataUpdatePriceUp,
+                })
         ).to.be.revertedWithCustomError(oracle, "DataSizeExceedsLimit");
     });
 
     it("Should update data successfully", async function () {
-        const tx = await oracle
-            .connect(provider)
-            .updateData(toBytes(JSON.stringify(jsonUnder5KB)), {
-                value: ethers.parseEther("0.005"),
+        const tx = await factory
+            .connect(owner)
+            .updateOracleData(await oracle.getAddress(), toBytes(JSON.stringify(jsonUnder5KB)), {
+                value: dataUpdatePriceUp,
             });
         await tx.wait();
 
