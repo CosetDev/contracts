@@ -69,16 +69,42 @@ describe("Oracle", function () {
         expect(fromBytes(await oracle.getData())).to.equal("Initial data");
     });
 
+    it("Should revert deploy Oracle process bc sent excess ether", async function () {
+        await expect(
+            factory
+                .connect(provider)
+                .deployOracle(10, ethers.parseEther("0.01"), ethers.toUtf8Bytes("Initial data"), {
+                    value: ethers.parseEther("0.06"),
+                })
+        ).to.be.revertedWithCustomError(factory, "ExcessivePayment");
+    });
+
+    it("Should revert update bc not provider", async function () {
+        await expect(
+            oracle.connect(thirdPartyUser).updateData(toBytes("Test data"))
+        ).to.be.revertedWithCustomError(oracle, "OnlyProviderCanCall");
+    });
+
     it("Should revert update bc didn't send enough ether", async function () {
-        await expect(oracle.connect(thirdPartyUser).update(toBytes("Test data")))
+        await expect(oracle.connect(provider).updateData(toBytes("Test data")))
             .to.be.revertedWithCustomError(oracle, "InsufficientPayment")
-            .withArgs(ethers.parseEther("0.01"), 0);
+            .withArgs(ethers.parseEther("0.002"), 0);
+    });
+
+    it("Should revert update bc sent excess ether", async function () {
+        await expect(
+            oracle
+                .connect(provider)
+                .updateData(toBytes("Test data"), { value: ethers.parseEther("0.003") })
+        )
+            .to.be.revertedWithCustomError(oracle, "ExcessivePayment")
+            .withArgs(ethers.parseEther("0.002"), ethers.parseEther("0.003"));
     });
 
     it("Should update data successfully", async function () {
         const tx = await oracle
-            .connect(thirdPartyUser)
-            .update(toBytes("Test data"), { value: ethers.parseEther("0.01") });
+            .connect(provider)
+            .updateData(toBytes("Test data"), { value: ethers.parseEther("0.002") });
         await tx.wait();
 
         const data = await oracle.getData();
@@ -92,8 +118,8 @@ describe("Oracle", function () {
 
     it("Should have update with correct event", async function () {
         const tx = await oracle
-            .connect(thirdPartyUser)
-            .update(toBytes("Another data"), { value: ethers.parseEther("0.01") });
+            .connect(provider)
+            .updateData(toBytes("Another data"), { value: ethers.parseEther("0.002") });
 
         const receipt = await tx.wait();
 
@@ -145,7 +171,7 @@ describe("Oracle", function () {
         await expect(
             oracle
                 .connect(thirdPartyUser)
-                .update(toBytes("Test data"), { value: ethers.parseEther("0.01") })
+                .updateData(toBytes("Test data"), { value: ethers.parseEther("0.002") })
         ).to.be.revertedWithCustomError(oracle, "OracleIsNotActive");
 
         await expect(oracle.getData()).to.be.revertedWithCustomError(oracle, "OracleIsNotActive");
