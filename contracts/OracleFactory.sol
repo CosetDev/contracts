@@ -76,9 +76,10 @@ contract OracleFactory is Ownable, ReentrancyGuard {
     }
 
     function shareFundBetweenDevelopers(uint256 amount) private {
-        uint256 share = amount / 2;
-        DEVELOPER_1.transferAmount(share);
-        DEVELOPER_2.transferAmount(share);
+        uint256 share1 = amount / 2;
+        uint256 share2 = amount - share1;
+        DEVELOPER_1.transferAmount(share1);
+        DEVELOPER_2.transferAmount(share2);
     }
 
     function deployOracle(
@@ -151,12 +152,11 @@ contract OracleFactory is Ownable, ReentrancyGuard {
         Oracle(oracleAddress).setDataUpdatePrice(_dataUpdatePrice);
     }
 
-    function getAllOracles() external view returns (address[] memory) {
-        return oracleList;
-    }
-
-    function getProviderOracles(address provider) external view returns (address[] memory) {
-        return providerOracles[provider];
+    function updateOracleData(
+        address oracleAddress,
+        bytes calldata _data
+    ) external payable onlyOwner nonReentrant isOracleExists(oracleAddress) {
+        Oracle(oracleAddress).updateData{value: msg.value}(_data);
     }
 
     function getAllOracles(
