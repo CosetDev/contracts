@@ -11,13 +11,14 @@ library OracleUtils {
     error OnlyFactoryCanCall();
     error OnlyProviderCanCall();
 
-    error OracleIsNotExist();
     error ZeroAmountProvided();
     error ZeroAddressProvided();
     error AmountTransferFailed();
+    error YouCantSetEmptyData();
     error ProviderShouldBeEOA();
     error FactoryShouldBeContract();
 
+    error OracleIsNotExist(address oracleAddress);
     error ExcessivePayment(uint256 required, uint256 provided);
     error InsufficientPayment(uint256 required, uint256 provided);
     error DataSizeExceedsLimit(uint256 providedSize, uint256 maxSize);

@@ -29,7 +29,6 @@ contract OracleFactory is Ownable, ReentrancyGuard {
 
     // data structures
     struct OracleInfo {
-        address oracleAddress;
         address provider;
         uint64 createdAt;
         bool isActive;
@@ -62,8 +61,8 @@ contract OracleFactory is Ownable, ReentrancyGuard {
     }
 
     modifier isOracleExists(address oracleAddress) {
-        if (oracles[oracleAddress].oracleAddress == address(0)) {
-            revert OracleUtils.OracleIsNotExist();
+        if (oracles[oracleAddress].provider == address(0)) {
+            revert OracleUtils.OracleIsNotExist(oracleAddress);
         }
         _;
     }
@@ -108,7 +107,6 @@ contract OracleFactory is Ownable, ReentrancyGuard {
         );
 
         oracles[oracleAddress] = OracleInfo({
-            oracleAddress: oracleAddress,
             provider: provider,
             createdAt: uint64(block.timestamp),
             isActive: true
@@ -161,12 +159,56 @@ contract OracleFactory is Ownable, ReentrancyGuard {
         return providerOracles[provider];
     }
 
-    function getActiveOracleCount() external view returns (uint256) {
-        return activeOracleCount;
+    function getAllOracles(
+        uint256 offset,
+        uint256 limit
+    ) external view returns (address[] memory, uint256 total) {
+        total = oracleList.length;
+
+        if (offset >= total) {
+            return (new address[](0), total);
+        }
+
+        uint256 end = offset + limit;
+        if (end > total) {
+            end = total;
+        }
+
+        uint256 size = end - offset;
+        address[] memory result = new address[](size);
+
+        for (uint256 i = 0; i < size; i++) {
+            result[i] = oracleList[offset + i];
+        }
+
+        return (result, total);
     }
 
-    function getTotalOracleCount() external view returns (uint256) {
-        return oracleList.length;
+    function getProviderOracles(
+        address provider,
+        uint256 offset,
+        uint256 limit
+    ) external view returns (address[] memory, uint256 total) {
+        address[] storage userOracles = providerOracles[provider];
+        total = userOracles.length;
+
+        if (offset >= total) {
+            return (new address[](0), total);
+        }
+
+        uint256 end = offset + limit;
+        if (end > total) {
+            end = total;
+        }
+
+        uint256 size = end - offset;
+        address[] memory result = new address[](size);
+
+        for (uint256 i = 0; i < size; i++) {
+            result[i] = userOracles[offset + i];
+        }
+
+        return (result, total);
     }
 
     function getOracleInfo(

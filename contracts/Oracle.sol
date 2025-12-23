@@ -28,6 +28,15 @@ contract Oracle is ReentrancyGuard {
     address public immutable provider;
     OracleFactory public immutable factory;
 
+    struct DataSnapshot {
+        bytes data;
+        uint256 timestamp;
+    }
+
+    DataSnapshot[100] public history;
+    uint256 private historyIndex;
+    uint256 public historyCount;
+
     // events
     event DataUpdated(bytes data, uint256 timestamp);
 
@@ -52,12 +61,12 @@ contract Oracle is ReentrancyGuard {
         if (_factory.code.length == 0) {
             revert OracleUtils.FactoryShouldBeContract();
         }
-        _setData(_initialData);
         provider = _provider;
         dataUpdatePrice = _dataUpdatePrice;
         lastUpdateTimestamp = block.timestamp;
         factory = OracleFactory(payable(_factory));
         recommendedUpdateDuration = _recommendedUpdateDuration;
+        _setData(_initialData, lastUpdateTimestamp);
     }
 
     modifier onlyProvider() {
@@ -107,20 +116,33 @@ contract Oracle is ReentrancyGuard {
             revert OracleUtils.ExcessivePayment(factoryAmount, msg.value);
         }
 
-        _setData(_data);
-
         uint256 ts = block.timestamp;
         lastUpdateTimestamp = ts;
+
+        _setData(_data, ts);
 
         address(factory).transferAmount(factoryAmount);
 
         emit DataUpdated(data, ts);
     }
 
-    function _setData(bytes memory _data) private {
+    function _setData(bytes memory _data, uint256 _timestamp) private {
+        if (_data.length == 0) {
+            revert OracleUtils.YouCantSetEmptyData();
+        }
+
         if (_data.length > MAX_DATA_SIZE) {
             revert OracleUtils.DataSizeExceedsLimit(_data.length, MAX_DATA_SIZE);
         }
+
+        history[historyIndex] = DataSnapshot({data: _data, timestamp: _timestamp});
+
+        historyIndex = (historyIndex + 1) % 100;
+
+        if (historyCount < 100) {
+            historyCount++;
+        }
+
         data = _data;
     }
 

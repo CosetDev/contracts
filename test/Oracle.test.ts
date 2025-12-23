@@ -74,6 +74,11 @@ describe("Oracle", function () {
         expect(fromBytes(await oracle.getData())).to.equal("Initial data");
     });
 
+    it("History count should be 1 after deployment", async function () {
+        const historyCount = await oracle.historyCount();
+        expect(historyCount).to.equal(1);
+    });
+
     it("Should revert deploy Oracle process bc sent excess ether", async function () {
         await expect(
             factory
@@ -106,6 +111,12 @@ describe("Oracle", function () {
             .withArgs(ethers.parseEther("0.002"), ethers.parseEther("0.003"));
     });
 
+    it("Should revert update bc empty data", async function () {
+        await expect(
+            oracle.connect(provider).updateData(toBytes(""), { value: ethers.parseEther("0.002") })
+        ).to.be.revertedWithCustomError(oracle, "YouCantSetEmptyData");
+    });
+
     it("Should update data successfully", async function () {
         const tx = await oracle
             .connect(provider)
@@ -114,6 +125,11 @@ describe("Oracle", function () {
 
         const data = await oracle.getData();
         expect(fromBytes(data)).to.equal("Test data");
+    });
+
+    it("History count should be 2 after first update", async function () {
+        const historyCount = await oracle.historyCount();
+        expect(historyCount).to.equal(2);
     });
 
     it("Should have correct provider address", async function () {
@@ -147,6 +163,11 @@ describe("Oracle", function () {
         expect(fromBytes(await oracle.getData())).to.equal("Another data");
     });
 
+    it("History count should be 3 after second update", async function () {
+        const historyCount = await oracle.historyCount();
+        expect(historyCount).to.equal(3);
+    });
+
     it("Wait for 15 seconds to test data not updated recently revert", async function () {
         await networkHelpers.time.increase(11);
 
@@ -163,7 +184,7 @@ describe("Oracle", function () {
     });
 
     it("Check active oracle counter before deactivation", async function () {
-        const activeOracles = await factory.getActiveOracleCount();
+        const activeOracles = await factory.activeOracleCount();
         expect(activeOracles).to.equal(1);
     });
 
@@ -183,7 +204,7 @@ describe("Oracle", function () {
     });
 
     it("Check active oracle counter after deactivation", async function () {
-        const activeOracles = await factory.getActiveOracleCount();
+        const activeOracles = await factory.activeOracleCount();
         expect(activeOracles).to.equal(0);
     });
 
@@ -202,7 +223,7 @@ describe("Oracle", function () {
     });
 
     it("Check active oracle counter after reactivation", async function () {
-        const activeOracles = await factory.getActiveOracleCount();
+        const activeOracles = await factory.activeOracleCount();
         expect(activeOracles).to.equal(1);
     });
 
@@ -286,5 +307,24 @@ describe("Oracle", function () {
 
         const data = await oracle.getData();
         expect(jsonCompare(JSON.parse(fromBytes(data)), jsonUnder5KB)).to.equal(true);
+    });
+
+    it("History count should be 4 after third update", async function () {
+        const historyCount = await oracle.historyCount();
+        expect(historyCount).to.equal(4);
+    });
+
+    it("Get history at index", async function () {
+        const history0 = await oracle.history(0);
+        expect(fromBytes(history0.data)).to.equal("Initial data");
+
+        const history1 = await oracle.history(1);
+        expect(fromBytes(history1.data)).to.equal("Test data");
+
+        const history2 = await oracle.history(2);
+        expect(fromBytes(history2.data)).to.equal("Another data");
+
+        const history3 = await oracle.history(3);
+        expect(jsonCompare(JSON.parse(fromBytes(history3.data)), jsonUnder5KB)).to.equal(true);
     });
 });
