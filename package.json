@@ -1,15 +1,53 @@
 {
-  "name": "contracts",
-  "version": "1.0.0",
+  "namespace": "@coset-dev",
+  "name": "@coset-dev/contracts",
+  "version": "1.0.3",
   "type": "module",
+  "files": [
+    "dist"
+  ],
+  "main": "dist/cjs/ethers-contracts/index.js",
+  "module": "dist/esm/ethers-contracts/index.js",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/esm/ethers-contracts/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/cjs/ethers-contracts/index.js"
+      }
+    },
+    "./node": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/cjs/ethers-contracts/index.js"
+    },
+    "./browser": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/esm/ethers-contracts/index.js"
+    }
+  },
   "scripts": {
     "test": "hardhat test",
     "node": "hardhat node",
-    "build": "hardhat compile",
-    "reset": "rm -rf artifacts cache",
+    "compile": "hardhat compile",
+    "prepublishOnly": "npm run build",
+    "build": "hardhat compile && tsx esbuild.ts",
+    "reset": "rm -rf artifacts cache types dist",
     "verify": "npx hardhat run scripts/verify.ts",
     "deploy:mainnet": "npx hardhat run scripts/deploy.ts --network mantle",
     "deploy:testnet": "npx hardhat run scripts/deploy.ts --network mantle-testnet"
+  },
+  "author": "Halil Beycan",
+  "license": "MIT",
+  "homepage": "https://github.com/CosetDev/contracts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CosetDev/contracts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CosetDev/contracts/issues"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^4.0.3",
@@ -21,7 +59,10 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.19.3",
     "chai": "^5.3.3",
+    "esbuild-plugin-copy": "^2.1.1",
+    "esbuild-plugin-tsc": "^0.5.0",
     "ethers": "^6.16.0",
+    "fast-glob": "^3.3.3",
     "forge-std": "github:foundry-rs/forge-std#v1.9.4",
     "hardhat": "^3.1.0",
     "mocha": "^11.7.5",
