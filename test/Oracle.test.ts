@@ -7,7 +7,7 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types";
 import { OracleFactory } from "../types/ethers-contracts/OracleFactory.js";
 import { jsonOver5KB, jsonUnder5KB } from "./data.js";
 
-const { ethers, networkHelpers, networkName } = await network.connect();
+const { ethers, networkHelpers } = await network.connect();
 
 const toBytes = (str: string) => {
     return ethers.toUtf8Bytes(str);

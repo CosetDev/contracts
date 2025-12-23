@@ -8,10 +8,6 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "moduleResolution": "node16",
-    "outDir": "dist",
-    "declaration": true,
-    "emitDeclarationOnly": false
-  },
-  "include": ["types/**/*"],
-  "exclude": ["node_modules", "dist"]
+    "outDir": "dist"
+  }
 }

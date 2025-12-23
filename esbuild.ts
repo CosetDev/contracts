@@ -6,7 +6,7 @@ import esbuildPluginTsc from "esbuild-plugin-tsc";
 
 async function generateTypes() {
     try {
-        execSync("tsc --emitDeclarationOnly", { stdio: "inherit" });
+        execSync("tsc --p tsconfig.build.json", { stdio: "inherit" });
     } catch (error) {
         console.error("Error generating type declarations:", error);
         process.exit(1);
