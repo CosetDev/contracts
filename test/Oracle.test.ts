@@ -221,12 +221,12 @@ describe("Oracle", function () {
     });
 
     it("Should have correct factory address", async function () {
-        const factoryAddress = await oracle.getFactory();
+        const factoryAddress = await oracle.factory();
         expect(factoryAddress).to.equal(await factory.getAddress());
     });
 
     it("Get factory config", async function () {
-        const config = await factory.getConfig();
+        const config = await factory.config();
         expect(config.oracleDeployPrice).to.equal(ethers.parseEther("0.05"));
         expect(config.oracleFactoryShare).to.equal(20);
     });
@@ -235,7 +235,7 @@ describe("Oracle", function () {
         const tx = await factory.connect(owner).updateConfig(ethers.parseEther("0.06"), 25);
         await tx.wait();
 
-        const config = await factory.getConfig();
+        const config = await factory.config();
         expect(config.oracleDeployPrice).to.equal(ethers.parseEther("0.06"));
         expect(config.oracleFactoryShare).to.equal(25);
     });

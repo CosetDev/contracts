@@ -76,10 +76,6 @@ contract OracleFactory is Ownable, ReentrancyGuard {
         config.oracleFactoryShare = _oracleFactoryShare;
     }
 
-    function getConfig() external view returns (FactoryConfig memory) {
-        return config;
-    }
-
     function shareFundBetweenDevelopers(uint256 amount) private {
         uint256 share = amount / 2;
         DEVELOPER_1.transferAmount(share);

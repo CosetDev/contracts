@@ -134,15 +134,7 @@ contract Oracle is ReentrancyGuard {
         return _getData();
     }
 
-    function getBlockTimestamp() external view returns (uint256) {
-        return block.timestamp;
-    }
-
     function getProvider() external view returns (address) {
         return provider;
-    }
-
-    function getFactory() external view returns (address) {
-        return address(factory);
     }
 }
