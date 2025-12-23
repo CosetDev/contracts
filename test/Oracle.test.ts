@@ -5,6 +5,7 @@ import { BytesLike } from "ethers";
 import { Oracle } from "../types/ethers-contracts/Oracle.js";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types";
 import { OracleFactory } from "../types/ethers-contracts/OracleFactory.js";
+import { jsonOver5KB, jsonUnder5KB } from "./data.js";
 
 const { ethers, networkHelpers, networkName } = await network.connect();
 
@@ -14,6 +15,10 @@ const toBytes = (str: string) => {
 
 const fromBytes = (data: BytesLike) => {
     return ethers.toUtf8String(data);
+};
+
+const jsonCompare = (json1: any, json2: any) => {
+    return JSON.stringify(json1) === JSON.stringify(json2);
 };
 
 describe("Oracle", function () {
@@ -261,5 +266,25 @@ describe("Oracle", function () {
         await tx.wait();
 
         expect(await oracle.dataUpdatePrice()).to.equal(ethers.parseEther("0.02"));
+    });
+
+    it("Should revert update bc too large data", async function () {
+        await expect(
+            oracle.connect(provider).updateData(toBytes(JSON.stringify(jsonOver5KB)), {
+                value: ethers.parseEther("0.005"),
+            })
+        ).to.be.revertedWithCustomError(oracle, "DataSizeExceedsLimit");
+    });
+
+    it("Should update data successfully", async function () {
+        const tx = await oracle
+            .connect(provider)
+            .updateData(toBytes(JSON.stringify(jsonUnder5KB)), {
+                value: ethers.parseEther("0.005"),
+            });
+        await tx.wait();
+
+        const data = await oracle.getData();
+        expect(jsonCompare(JSON.parse(fromBytes(data)), jsonUnder5KB)).to.equal(true);
     });
 });

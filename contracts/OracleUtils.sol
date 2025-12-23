@@ -20,6 +20,7 @@ library OracleUtils {
 
     error ExcessivePayment(uint256 required, uint256 provided);
     error InsufficientPayment(uint256 required, uint256 provided);
+    error DataSizeExceedsLimit(uint256 providedSize, uint256 maxSize);
 
     function transferAmount(address _to, uint256 _amount) internal {
         if (_to == address(0)) {

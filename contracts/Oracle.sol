@@ -11,6 +11,8 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 contract Oracle is ReentrancyGuard {
     using OracleUtils for address;
 
+    uint256 public constant MAX_DATA_SIZE = 5120; // 5 KB
+
     // variables
     bool public isActive = true;
 
@@ -50,7 +52,7 @@ contract Oracle is ReentrancyGuard {
         if (_factory.code.length == 0) {
             revert OracleUtils.FactoryShouldBeContract();
         }
-        data = _initialData;
+        _setData(_initialData);
         provider = _provider;
         dataUpdatePrice = _dataUpdatePrice;
         lastUpdateTimestamp = block.timestamp;
@@ -105,7 +107,7 @@ contract Oracle is ReentrancyGuard {
             revert OracleUtils.ExcessivePayment(factoryAmount, msg.value);
         }
 
-        data = _data;
+        _setData(_data);
 
         uint256 ts = block.timestamp;
         lastUpdateTimestamp = ts;
@@ -113,6 +115,13 @@ contract Oracle is ReentrancyGuard {
         address(factory).transferAmount(factoryAmount);
 
         emit DataUpdated(data, ts);
+    }
+
+    function _setData(bytes memory _data) private {
+        if (_data.length > MAX_DATA_SIZE) {
+            revert OracleUtils.DataSizeExceedsLimit(_data.length, MAX_DATA_SIZE);
+        }
+        data = _data;
     }
 
     function _getData() private view returns (bytes memory) {
