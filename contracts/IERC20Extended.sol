@@ -15,6 +15,12 @@ interface IERC20Extended is IERC20 {
         bytes32 s
     ) external;
 
+    function name() external view returns (string memory);
+
+    function symbol() external view returns (string memory);
+
+    function decimals() external view returns (uint8);
+
     function nonces(address owner) external view returns (uint256);
 
     function version() external view returns (string memory);
