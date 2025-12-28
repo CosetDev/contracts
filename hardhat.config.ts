@@ -11,6 +11,13 @@ export default defineConfig({
         profiles: {
             default: {
                 version: "0.8.30",
+                settings: {
+                    optimizer: {
+                        enabled: true,
+                        runs: 200,
+                    },
+                    viaIR: true,
+                },
             },
             production: {
                 version: "0.8.30",
@@ -19,6 +26,7 @@ export default defineConfig({
                         enabled: true,
                         runs: 200,
                     },
+                    viaIR: true,
                 },
             },
         },
@@ -34,14 +42,14 @@ export default defineConfig({
             type: "http",
             chainType: "l1",
             url: "https://rpc.mantle.xyz",
-            accounts: [process.env.EVM_PRIVATE_KEY!],
+            accounts: [process.env.OWNER_PRIVATE_KEY!],
         },
         "mantle-testnet": {
             chainId: 5003,
             type: "http",
             chainType: "l1",
             url: "https://rpc.sepolia.mantle.xyz",
-            accounts: [process.env.EVM_PRIVATE_KEY!],
+            accounts: [process.env.OWNER_PRIVATE_KEY!],
         },
     },
 });

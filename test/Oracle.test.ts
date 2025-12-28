@@ -1,13 +1,16 @@
 import { expect } from "chai";
 import { before } from "mocha";
 import { network } from "hardhat";
-import { BytesLike } from "ethers";
+import TestnetUSDC from "./TestnetUSDC.json";
+import { BytesLike, parseUnits } from "ethers";
+import { jsonOver5KB, jsonUnder5KB } from "./data.js";
 import { Oracle } from "../types/ethers-contracts/Oracle.js";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types";
 import { OracleFactory } from "../types/ethers-contracts/OracleFactory.js";
-import { jsonOver5KB, jsonUnder5KB } from "./data.js";
 
-const { ethers, networkHelpers } = await network.connect();
+const { ethers, networkHelpers, networkConfig } = await network.connect();
+
+const chainId = networkConfig.chainId;
 
 const toBytes = (str: string) => {
     return ethers.toUtf8Bytes(str);
@@ -21,10 +24,21 @@ const jsonCompare = (json1: any, json2: any) => {
     return JSON.stringify(json1) === JSON.stringify(json2);
 };
 
+interface TestnetUSDC {
+    name(): Promise<string>;
+    version(): Promise<string>;
+    getAddress(): Promise<string>;
+    transfer(to: string, amount: bigint): Promise<void>;
+    waitForDeployment(): Promise<void>;
+    connect(signer: HardhatEthersSigner): TestnetUSDC;
+}
+
 describe("Oracle", function () {
     let oracle: Oracle;
 
     let factory: OracleFactory;
+
+    let testToken: TestnetUSDC;
 
     let owner: HardhatEthersSigner;
 
@@ -34,29 +48,109 @@ describe("Oracle", function () {
 
     let thirdPartyUser: HardhatEthersSigner;
 
-    const dateUpdatePrice = ethers.parseEther("0.01");
+    const dataUpdatePrice = parseUnits("10", 6);
 
-    const dataUpdatePriceUp = ethers.parseEther("0.02");
-
-    const getBalance = async (signer: HardhatEthersSigner) => {
-        const wei = await signer.provider?.getBalance(signer.address);
-        return ethers.formatEther(wei!);
-    };
+    const dataUpdatePriceUp = parseUnits("20", 6);
 
     before(async function () {
         [owner, deployer, provider, thirdPartyUser] = await ethers.getSigners();
 
+        // deploy test ERC20 token
+        const TestToken = new ethers.ContractFactory(
+            TestnetUSDC.abi,
+            TestnetUSDC.bytecode,
+            deployer
+        );
+        testToken = (await TestToken.deploy()) as any as TestnetUSDC;
+        await testToken.waitForDeployment();
+
+        // transfer test tokens to users
+        const initialAmount = ethers.parseUnits("1000", 6);
+        const deployerWallet = testToken.connect(deployer);
+        await deployerWallet.transfer(await provider.getAddress(), initialAmount);
+        await deployerWallet.transfer(await owner.getAddress(), initialAmount);
+        await deployerWallet.transfer(await thirdPartyUser.getAddress(), initialAmount);
+
+        // deploy factory
         const Factory = await ethers.getContractFactory("OracleFactory", deployer);
-        factory = await Factory.deploy(owner.address);
+        factory = await Factory.deploy(owner.address, await testToken.getAddress());
         await factory.waitForDeployment();
     });
 
+    const subFactoryShare = async (amount: bigint) => {
+        const config = await factory.config();
+        const factoryShare = (amount * BigInt(config.oracleFactoryShare)) / 100n;
+        return amount - factoryShare;
+    };
+
+    const prepareSignature = async (
+        signer: HardhatEthersSigner,
+        from: string,
+        to: string,
+        value: bigint
+    ) => {
+        const validAfter = 0;
+        const validBefore = Math.floor(Date.now() / 1000) + 3600;
+        const nonce = ethers.hexlify(ethers.randomBytes(32));
+
+        const name = await testToken.name();
+        const version = await testToken.version();
+
+        const domain = {
+            name: name,
+            version: version,
+            chainId: chainId,
+            verifyingContract: await testToken.getAddress(),
+        };
+
+        // EIP-712 Type
+        const types = {
+            TransferWithAuthorization: [
+                { name: "from", type: "address" },
+                { name: "to", type: "address" },
+                { name: "value", type: "uint256" },
+                { name: "validAfter", type: "uint256" },
+                { name: "validBefore", type: "uint256" },
+                { name: "nonce", type: "bytes32" },
+            ],
+        };
+
+        // Message
+        const message = {
+            from,
+            to,
+            value,
+            validAfter,
+            validBefore,
+            nonce,
+        };
+
+        const sig = ethers.Signature.from(await signer.signTypedData(domain, types, message));
+
+        return { validAfter, validBefore, nonce, sig };
+    };
+
     it("Should deploy Oracle contract", async function () {
+        const config = await factory.config();
+        const { validAfter, validBefore, nonce, sig } = await prepareSignature(
+            provider,
+            await provider.getAddress(),
+            await owner.getAddress(),
+            config.oracleDeployPrice
+        );
         const tx = await factory
             .connect(provider)
-            .deployOracle(10, dateUpdatePrice, ethers.toUtf8Bytes("Initial data"), {
-                value: ethers.parseEther("0.05"),
-            });
+            .deployOracle(
+                10,
+                dataUpdatePrice,
+                ethers.toUtf8Bytes("Initial data"),
+                validAfter,
+                validBefore,
+                nonce,
+                sig.v,
+                sig.r,
+                sig.s
+            );
 
         const receipt = await tx.wait();
 
@@ -83,14 +177,28 @@ describe("Oracle", function () {
         expect(historyCount).to.equal(1);
     });
 
-    it("Should revert deploy Oracle process bc sent excess ether", async function () {
+    it("Should revert deploy Oracle bc sent wrong signature", async function () {
+        const { validAfter, validBefore, nonce, sig } = await prepareSignature(
+            provider,
+            await provider.getAddress(),
+            await factory.getAddress(),
+            10n * 10n ** 6n
+        );
         await expect(
             factory
                 .connect(provider)
-                .deployOracle(10, dateUpdatePrice, ethers.toUtf8Bytes("Initial data"), {
-                    value: ethers.parseEther("0.06"),
-                })
-        ).to.be.revertedWithCustomError(factory, "ExcessivePayment");
+                .deployOracle(
+                    10,
+                    dataUpdatePrice,
+                    ethers.toUtf8Bytes("Initial data"),
+                    validAfter,
+                    validBefore,
+                    nonce,
+                    sig.v,
+                    sig.r,
+                    sig.s
+                )
+        ).to.be.revertedWith("FiatTokenV2: invalid signature");
     });
 
     it("Should revert update bc not factory", async function () {
@@ -99,40 +207,71 @@ describe("Oracle", function () {
         ).to.be.revertedWithCustomError(oracle, "OnlyFactoryCanCall");
     });
 
-    it("Should revert update bc didn't send enough ether", async function () {
-        await expect(
-            factory.connect(owner).updateOracleData(await oracle.getAddress(), toBytes("Test data"))
-        )
-            .to.be.revertedWithCustomError(oracle, "InsufficientPayment")
-            .withArgs(dateUpdatePrice, 0);
-    });
-
-    it("Should revert update bc sent excess ether", async function () {
+    it("Should revert update bc sent wrong signature", async function () {
+        const { validAfter, validBefore, nonce, sig } = await prepareSignature(
+            provider,
+            await provider.getAddress(),
+            await factory.getAddress(),
+            10n * 10n ** 6n
+        );
         await expect(
             factory
                 .connect(owner)
-                .updateOracleData(await oracle.getAddress(), toBytes("Test data"), {
-                    value: dataUpdatePriceUp,
-                })
-        )
-            .to.be.revertedWithCustomError(oracle, "ExcessivePayment")
-            .withArgs(dateUpdatePrice, dataUpdatePriceUp);
+                .updateOracleData(
+                    await oracle.getAddress(),
+                    toBytes("Test data"),
+                    validAfter,
+                    validBefore,
+                    nonce,
+                    sig.v,
+                    sig.r,
+                    sig.s
+                )
+        ).to.be.rejectedWith("FiatTokenV2: invalid signature");
     });
 
     it("Should revert update bc empty data", async function () {
+        const { validAfter, validBefore, nonce, sig } = await prepareSignature(
+            provider,
+            await owner.getAddress(),
+            await provider.getAddress(),
+            10n * 10n ** 6n
+        );
         await expect(
-            factory.connect(owner).updateOracleData(await oracle.getAddress(), toBytes(""), {
-                value: dateUpdatePrice,
-            })
+            factory
+                .connect(owner)
+                .updateOracleData(
+                    await oracle.getAddress(),
+                    toBytes(""),
+                    validAfter,
+                    validBefore,
+                    nonce,
+                    sig.v,
+                    sig.r,
+                    sig.s
+                )
         ).to.be.revertedWithCustomError(oracle, "YouCantSetEmptyData");
     });
 
-    it("Should update data successfully", async function () {
+    it("Should data update successfully", async function () {
+        const { validAfter, validBefore, nonce, sig } = await prepareSignature(
+            owner,
+            await owner.getAddress(),
+            await provider.getAddress(),
+            await subFactoryShare(dataUpdatePrice)
+        );
         const tx = await factory
             .connect(owner)
-            .updateOracleData(await oracle.getAddress(), toBytes("Test data"), {
-                value: dateUpdatePrice,
-            });
+            .updateOracleData(
+                await oracle.getAddress(),
+                toBytes("Test data"),
+                validAfter,
+                validBefore,
+                nonce,
+                sig.v,
+                sig.r,
+                sig.s
+            );
         await tx.wait();
 
         const data = await oracle.getData();
@@ -150,11 +289,24 @@ describe("Oracle", function () {
     });
 
     it("Should have update with correct event", async function () {
+        const { validAfter, validBefore, nonce, sig } = await prepareSignature(
+            owner,
+            await owner.getAddress(),
+            await provider.getAddress(),
+            await subFactoryShare(dataUpdatePrice)
+        );
         const tx = await factory
             .connect(owner)
-            .updateOracleData(await oracle.getAddress(), toBytes("Another data"), {
-                value: dateUpdatePrice,
-            });
+            .updateOracleData(
+                await oracle.getAddress(),
+                toBytes("Another data"),
+                validAfter,
+                validBefore,
+                nonce,
+                sig.v,
+                sig.r,
+                sig.s
+            );
 
         const receipt = await tx.wait();
 
@@ -209,9 +361,7 @@ describe("Oracle", function () {
         expect(await oracle.isActive()).to.equal(false);
 
         await expect(
-            oracle
-                .connect(thirdPartyUser)
-                .updateData(toBytes("Test data"), { value: ethers.parseEther("0.002") })
+            oracle.connect(thirdPartyUser).updateData(toBytes("Test data"))
         ).to.be.revertedWithCustomError(oracle, "OracleIsNotActive");
 
         await expect(oracle.getData()).to.be.revertedWithCustomError(oracle, "OracleIsNotActive");
@@ -267,16 +417,18 @@ describe("Oracle", function () {
 
     it("Get factory config", async function () {
         const config = await factory.config();
-        expect(config.oracleDeployPrice).to.equal(ethers.parseEther("0.05"));
+        expect(config.oracleDeployPrice).to.equal(parseUnits("5", 6));
         expect(config.oracleFactoryShare).to.equal(20);
     });
 
     it("Update oracle config by owner", async function () {
-        const tx = await factory.connect(owner).updateConfig(ethers.parseEther("0.06"), 25);
+        const tx = await factory
+            .connect(owner)
+            .updateConfig(parseUnits("6", 6), 25, await testToken.getAddress());
         await tx.wait();
 
         const config = await factory.config();
-        expect(config.oracleDeployPrice).to.equal(ethers.parseEther("0.06"));
+        expect(config.oracleDeployPrice).to.equal(parseUnits("6", 6));
         expect(config.oracleFactoryShare).to.equal(25);
     });
 
@@ -304,21 +456,47 @@ describe("Oracle", function () {
     });
 
     it("Should revert update bc too large data", async function () {
+        const { validAfter, validBefore, nonce, sig } = await prepareSignature(
+            owner,
+            await owner.getAddress(),
+            await provider.getAddress(),
+            await subFactoryShare(dataUpdatePriceUp)
+        );
         await expect(
             factory
                 .connect(owner)
-                .updateOracleData(await oracle.getAddress(), toBytes(JSON.stringify(jsonOver5KB)), {
-                    value: dataUpdatePriceUp,
-                })
+                .updateOracleData(
+                    await oracle.getAddress(),
+                    toBytes(JSON.stringify(jsonOver5KB)),
+                    validAfter,
+                    validBefore,
+                    nonce,
+                    sig.v,
+                    sig.r,
+                    sig.s
+                )
         ).to.be.revertedWithCustomError(oracle, "DataSizeExceedsLimit");
     });
 
     it("Should update data successfully", async function () {
+        const { validAfter, validBefore, nonce, sig } = await prepareSignature(
+            owner,
+            await owner.getAddress(),
+            await provider.getAddress(),
+            await subFactoryShare(dataUpdatePriceUp)
+        );
         const tx = await factory
             .connect(owner)
-            .updateOracleData(await oracle.getAddress(), toBytes(JSON.stringify(jsonUnder5KB)), {
-                value: dataUpdatePriceUp,
-            });
+            .updateOracleData(
+                await oracle.getAddress(),
+                toBytes(JSON.stringify(jsonUnder5KB)),
+                validAfter,
+                validBefore,
+                nonce,
+                sig.v,
+                sig.r,
+                sig.s
+            );
         await tx.wait();
 
         const data = await oracle.getData();

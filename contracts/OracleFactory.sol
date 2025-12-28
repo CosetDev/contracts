@@ -2,7 +2,8 @@
 pragma solidity 0.8.30;
 
 import "./Oracle.sol";
-import "./OracleUtils.sol";
+import "./OracleErrors.sol";
+import "./IERC20Extended.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
@@ -10,12 +11,6 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 /// @author Halil Beycan
 /// @notice Official oracle factory implementation by Halil Beycan for Coset
 contract OracleFactory is Ownable, ReentrancyGuard {
-    using OracleUtils for address;
-
-    // developer addresses
-    address private constant DEVELOPER_1 = 0x3F2e72283f1E29b7cb4402511C41b60FB4900B57;
-    address private constant DEVELOPER_2 = 0xf0b5563971c60D2dc4407D1d85C9c3D2Fc06726e;
-
     // variables
     FactoryConfig public config;
 
@@ -27,6 +22,8 @@ contract OracleFactory is Ownable, ReentrancyGuard {
 
     mapping(address => address[]) public providerOracles;
 
+    IERC20Extended public paymentToken;
+
     // data structures
     struct OracleInfo {
         address provider;
@@ -37,6 +34,7 @@ contract OracleFactory is Ownable, ReentrancyGuard {
     struct FactoryConfig {
         uint128 oracleDeployPrice; // in wei
         uint8 oracleFactoryShare; // percentage
+        address paymentTokenAddress;
     }
 
     // events
@@ -53,49 +51,51 @@ contract OracleFactory is Ownable, ReentrancyGuard {
         uint256 timestamp
     );
 
-    constructor(address payable _owner) Ownable(_owner) {
+    constructor(address _owner, address _paymentTokenAddress) Ownable(_owner) {
         config = FactoryConfig({
-            oracleDeployPrice: 0.05 ether,
-            oracleFactoryShare: 20 // percentage
+            oracleFactoryShare: 20, // percentage
+            oracleDeployPrice: 5 * 10 ** 6, // 5 USDC
+            paymentTokenAddress: _paymentTokenAddress
         });
+        paymentToken = IERC20Extended(_paymentTokenAddress);
     }
 
     modifier isOracleExists(address oracleAddress) {
         if (oracles[oracleAddress].provider == address(0)) {
-            revert OracleUtils.OracleIsNotExist(oracleAddress);
+            revert OracleErrors.OracleIsNotExist(oracleAddress);
         }
         _;
     }
 
     function updateConfig(
         uint128 _oracleDeployPrice,
-        uint8 _oracleFactoryShare
+        uint8 _oracleFactoryShare,
+        address _paymentTokenAddress
     ) external onlyOwner {
         config.oracleDeployPrice = _oracleDeployPrice;
         config.oracleFactoryShare = _oracleFactoryShare;
-    }
-
-    function shareFundBetweenDevelopers(uint256 amount) private {
-        uint256 share1 = amount / 2;
-        uint256 share2 = amount - share1;
-        DEVELOPER_1.transferAmount(share1);
-        DEVELOPER_2.transferAmount(share2);
+        config.paymentTokenAddress = _paymentTokenAddress;
+        paymentToken = IERC20Extended(_paymentTokenAddress);
     }
 
     function deployOracle(
         uint256 _recommendedUpdateDuration,
         uint256 _dataUpdatePrice,
-        bytes calldata _initialData
-    ) external payable nonReentrant {
-        if (msg.value < config.oracleDeployPrice) {
-            revert OracleUtils.InsufficientPayment(config.oracleDeployPrice, msg.value);
-        }
-
-        if (msg.value > config.oracleDeployPrice) {
-            revert OracleUtils.ExcessivePayment(config.oracleDeployPrice, msg.value);
-        }
-
+        bytes calldata _initialData,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external nonReentrant {
         address provider = msg.sender;
+
+        uint256 balance = paymentToken.balanceOf(provider);
+
+        if (balance < config.oracleDeployPrice) {
+            revert OracleErrors.InsufficientPayment(config.oracleDeployPrice, balance);
+        }
 
         address oracleAddress = address(
             new Oracle(
@@ -117,7 +117,17 @@ contract OracleFactory is Ownable, ReentrancyGuard {
         oracleList.push(oracleAddress);
         providerOracles[provider].push(oracleAddress);
 
-        shareFundBetweenDevelopers(msg.value);
+        paymentToken.transferWithAuthorization(
+            provider,
+            owner(),
+            config.oracleDeployPrice,
+            validAfter,
+            validBefore,
+            nonce,
+            v,
+            r,
+            s
+        );
 
         emit OracleDeployed(oracleAddress, provider, block.timestamp);
     }
@@ -141,7 +151,7 @@ contract OracleFactory is Ownable, ReentrancyGuard {
                 block.timestamp
             );
         } else {
-            revert OracleUtils.NoStatusChange();
+            revert OracleErrors.NoStatusChange();
         }
     }
 
@@ -154,9 +164,40 @@ contract OracleFactory is Ownable, ReentrancyGuard {
 
     function updateOracleData(
         address oracleAddress,
-        bytes calldata _data
-    ) external payable onlyOwner nonReentrant isOracleExists(oracleAddress) {
-        Oracle(oracleAddress).updateData{value: msg.value}(_data);
+        bytes calldata _data,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external onlyOwner nonReentrant isOracleExists(oracleAddress) {
+        Oracle oracle = Oracle(oracleAddress);
+
+        address provider = oracle.provider();
+        uint256 dataUpdatePrice = oracle.dataUpdatePrice();
+        uint256 factoryAmount = (dataUpdatePrice * config.oracleFactoryShare) / 100;
+        uint256 providerAmount = dataUpdatePrice - factoryAmount;
+
+        uint256 balance = paymentToken.balanceOf(owner());
+
+        if (balance < providerAmount) {
+            revert OracleErrors.InsufficientPayment(providerAmount, balance);
+        }
+
+        Oracle(oracleAddress).updateData(_data);
+
+        paymentToken.transferWithAuthorization(
+            owner(),
+            provider,
+            providerAmount,
+            validAfter,
+            validBefore,
+            nonce,
+            v,
+            r,
+            s
+        );
     }
 
     function getAllOracles(
@@ -221,11 +262,5 @@ contract OracleFactory is Ownable, ReentrancyGuard {
     {
         OracleInfo memory info = oracles[oracleAddress];
         return (info.provider, info.createdAt, info.isActive);
-    }
-
-    receive() external payable {
-        if (msg.value > 0) {
-            shareFundBetweenDevelopers(msg.value);
-        }
     }
 }
