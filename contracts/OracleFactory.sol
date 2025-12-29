@@ -60,9 +60,9 @@ contract OracleFactory is Ownable, ReentrancyGuard {
         paymentToken = IERC20Extended(_paymentTokenAddress);
     }
 
-    modifier isOracleExists(address oracleAddress) {
+    modifier oracleExists(address oracleAddress) {
         if (oracles[oracleAddress].provider == address(0)) {
-            revert OracleErrors.OracleIsNotExist(oracleAddress);
+            revert OracleErrors.OracleDoesNotExist(oracleAddress);
         }
         _;
     }
@@ -135,7 +135,7 @@ contract OracleFactory is Ownable, ReentrancyGuard {
     function setOracleStatus(
         address oracleAddress,
         bool _isActive
-    ) external onlyOwner isOracleExists(oracleAddress) {
+    ) external onlyOwner oracleExists(oracleAddress) {
         bool old = oracles[oracleAddress].isActive;
 
         if (old != _isActive) {
@@ -158,7 +158,7 @@ contract OracleFactory is Ownable, ReentrancyGuard {
     function setOracleDataUpdatePrice(
         address oracleAddress,
         uint256 _dataUpdatePrice
-    ) external onlyOwner isOracleExists(oracleAddress) {
+    ) external onlyOwner oracleExists(oracleAddress) {
         Oracle(oracleAddress).setDataUpdatePrice(_dataUpdatePrice);
     }
 
@@ -171,7 +171,7 @@ contract OracleFactory is Ownable, ReentrancyGuard {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) external onlyOwner nonReentrant isOracleExists(oracleAddress) {
+    ) external onlyOwner nonReentrant oracleExists(oracleAddress) {
         Oracle oracle = Oracle(oracleAddress);
 
         address provider = oracle.provider();
@@ -257,7 +257,7 @@ contract OracleFactory is Ownable, ReentrancyGuard {
     )
         external
         view
-        isOracleExists(oracleAddress)
+        oracleExists(oracleAddress)
         returns (address provider, uint64 createdAt, bool isActive)
     {
         OracleInfo memory info = oracles[oracleAddress];

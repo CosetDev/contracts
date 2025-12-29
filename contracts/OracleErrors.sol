@@ -18,7 +18,7 @@ library OracleErrors {
     error ProviderShouldBeEOA();
     error FactoryShouldBeContract();
 
-    error OracleIsNotExist(address oracleAddress);
+    error OracleDoesNotExist(address oracleAddress);
     error InsufficientPayment(uint256 required, uint256 balance);
     error DataSizeExceedsLimit(uint256 providedSize, uint256 maxSize);
 }
