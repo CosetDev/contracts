@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-/// @title Coset Oracle Utilities
+/// @title Coset Oracle Errors
 /// @author Halil Beycan
 /// @notice Utility library for Coset contracts
-library OracleUtils {
+library OracleErrors {
     // global errors
     error NoStatusChange();
     error OracleIsNotActive();
@@ -19,23 +19,6 @@ library OracleUtils {
     error FactoryShouldBeContract();
 
     error OracleIsNotExist(address oracleAddress);
-    error ExcessivePayment(uint256 required, uint256 provided);
-    error InsufficientPayment(uint256 required, uint256 provided);
+    error InsufficientPayment(uint256 required, uint256 balance);
     error DataSizeExceedsLimit(uint256 providedSize, uint256 maxSize);
-
-    function transferAmount(address _to, uint256 _amount) internal {
-        if (_to == address(0)) {
-            revert OracleUtils.ZeroAddressProvided();
-        }
-
-        if (_amount == 0) {
-            revert OracleUtils.ZeroAmountProvided();
-        }
-
-        (bool success, ) = _to.call{value: _amount}("");
-
-        if (!success) {
-            revert OracleUtils.AmountTransferFailed();
-        }
-    }
 }

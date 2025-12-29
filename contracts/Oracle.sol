@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import "./OracleUtils.sol";
+import "./OracleErrors.sol";
 import "./OracleFactory.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
@@ -9,8 +9,6 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 /// @author Halil Beycan
 /// @notice Official oracle implementation by Halil Beycan for Coset
 contract Oracle is ReentrancyGuard {
-    using OracleUtils for address;
-
     uint256 public constant MAX_DATA_SIZE = 5120; // 5 KB
 
     // variables
@@ -53,39 +51,39 @@ contract Oracle is ReentrancyGuard {
         address _factory
     ) {
         if (_provider == address(0) || _factory == address(0)) {
-            revert OracleUtils.ZeroAddressProvided();
+            revert OracleErrors.ZeroAddressProvided();
         }
         if (_provider.code.length != 0) {
-            revert OracleUtils.ProviderShouldBeEOA();
+            revert OracleErrors.ProviderShouldBeEOA();
         }
         if (_factory.code.length == 0) {
-            revert OracleUtils.FactoryShouldBeContract();
+            revert OracleErrors.FactoryShouldBeContract();
         }
         provider = _provider;
+        factory = OracleFactory(_factory);
         dataUpdatePrice = _dataUpdatePrice;
         lastUpdateTimestamp = block.timestamp;
-        factory = OracleFactory(payable(_factory));
         recommendedUpdateDuration = _recommendedUpdateDuration;
         _setData(_initialData, lastUpdateTimestamp);
     }
 
     modifier onlyProvider() {
         if (msg.sender != provider) {
-            revert OracleUtils.OnlyProviderCanCall();
+            revert OracleErrors.OnlyProviderCanCall();
         }
         _;
     }
 
     modifier onlyFactory() {
         if (msg.sender != address(factory)) {
-            revert OracleUtils.OnlyFactoryCanCall();
+            revert OracleErrors.OnlyFactoryCanCall();
         }
         _;
     }
 
     modifier onlyWhenActive() {
         if (!isActive) {
-            revert OracleUtils.OracleIsNotActive();
+            revert OracleErrors.OracleIsNotActive();
         }
         _;
     }
@@ -104,41 +102,20 @@ contract Oracle is ReentrancyGuard {
 
     function updateData(
         bytes calldata _data
-    ) external payable nonReentrant onlyWhenActive onlyFactory {
-        (, uint256 oracleFactoryShare) = factory.config();
-
-        if (msg.value < dataUpdatePrice) {
-            revert OracleUtils.InsufficientPayment(dataUpdatePrice, msg.value);
-        }
-
-        if (msg.value > dataUpdatePrice) {
-            revert OracleUtils.ExcessivePayment(dataUpdatePrice, msg.value);
-        }
-
+    ) external onlyWhenActive onlyFactory {
         uint256 ts = block.timestamp;
         lastUpdateTimestamp = ts;
-
         _setData(_data, ts);
-
-        address factoryAddress = address(factory);
-        uint256 factoryShare = oracleFactoryShare;
-
-        uint256 factoryAmount = (msg.value * factoryShare) / 100;
-        uint256 providerAmount = msg.value - factoryAmount;
-
-        provider.transferAmount(providerAmount);
-        factoryAddress.transferAmount(factoryAmount);
-
         emit DataUpdated(data, ts);
     }
 
     function _setData(bytes memory _data, uint256 _timestamp) private {
         if (_data.length == 0) {
-            revert OracleUtils.YouCantSetEmptyData();
+            revert OracleErrors.YouCantSetEmptyData();
         }
 
         if (_data.length > MAX_DATA_SIZE) {
-            revert OracleUtils.DataSizeExceedsLimit(_data.length, MAX_DATA_SIZE);
+            revert OracleErrors.DataSizeExceedsLimit(_data.length, MAX_DATA_SIZE);
         }
 
         history[historyIndex] = DataSnapshot({data: _data, timestamp: _timestamp});

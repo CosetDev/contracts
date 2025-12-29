@@ -23,3 +23,5 @@
 .env
 
 .npmrc
+
+test*.ts
