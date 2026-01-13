@@ -5,11 +5,18 @@ dotenv.config();
 
 const main = async () => {
     const { ethers, networkName } = await network.connect();
-    const paymentTokenAddress = networkName.includes("testnet")
+    const usdcTokenAddress = networkName.includes("testnet")
         ? process.env.TUSDC_ADDRESS!
         : process.env.USDC_ADDRESS!;
+    const cstTokenAddress = networkName.includes("testnet")
+        ? process.env.CST_TESTNET_ADDRESS!
+        : process.env.CST_MAINNET_ADDRESS!;
     const OracleFactory = await ethers.getContractFactory("OracleFactory");
-    const factory = await OracleFactory.deploy(process.env.OWNER_ADDRESS!, paymentTokenAddress);
+    const factory = await OracleFactory.deploy(
+        process.env.OWNER_ADDRESS!,
+        usdcTokenAddress,
+        cstTokenAddress
+    );
 
     await factory.waitForDeployment();
 

@@ -16,6 +16,8 @@ library OracleErrors {
     error AmountTransferFailed();
     error YouCantSetEmptyData();
     error ProviderShouldBeEOA();
+    error InvalidPaymentToken();
+    error CSTPriceOracleNotSet();
     error FactoryShouldBeContract();
 
     error OracleDoesNotExist(address oracleAddress);

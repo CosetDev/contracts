@@ -2,6 +2,7 @@
 pragma solidity 0.8.30;
 
 import "./Oracle.sol";
+import "hardhat/console.sol";
 import "./OracleErrors.sol";
 import "./IERC20Extended.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -22,7 +23,7 @@ contract OracleFactory is Ownable, ReentrancyGuard {
 
     mapping(address => address[]) public providerOracles;
 
-    IERC20Extended public paymentToken;
+    Oracle public cstPriceOracle; // 1 USDC = X CST
 
     // data structures
     struct OracleInfo {
@@ -34,7 +35,8 @@ contract OracleFactory is Ownable, ReentrancyGuard {
     struct FactoryConfig {
         uint128 oracleDeployPrice; // in wei
         uint8 oracleFactoryShare; // percentage
-        address paymentTokenAddress;
+        address usdcTokenAddress;
+        address cstTokenAddress;
     }
 
     // events
@@ -51,13 +53,17 @@ contract OracleFactory is Ownable, ReentrancyGuard {
         uint256 timestamp
     );
 
-    constructor(address _owner, address _paymentTokenAddress) Ownable(_owner) {
+    constructor(
+        address _owner,
+        address _usdcTokenAddress,
+        address _cstTokenAddress
+    ) Ownable(_owner) {
         config = FactoryConfig({
             oracleFactoryShare: 20, // percentage
             oracleDeployPrice: 5 * 10 ** 6, // 5 USDC
-            paymentTokenAddress: _paymentTokenAddress
+            cstTokenAddress: _cstTokenAddress,
+            usdcTokenAddress: _usdcTokenAddress
         });
-        paymentToken = IERC20Extended(_paymentTokenAddress);
     }
 
     modifier oracleExists(address oracleAddress) {
@@ -67,18 +73,63 @@ contract OracleFactory is Ownable, ReentrancyGuard {
         _;
     }
 
+    modifier validPaymentToken(address paymentTokenAddress) {
+        if (
+            paymentTokenAddress != config.usdcTokenAddress &&
+            paymentTokenAddress != config.cstTokenAddress
+        ) {
+            revert OracleErrors.InvalidPaymentToken();
+        }
+        if (
+            paymentTokenAddress == config.cstTokenAddress && address(cstPriceOracle) == address(0)
+        ) {
+            revert OracleErrors.CSTPriceOracleNotSet();
+        }
+        _;
+    }
+
     function updateConfig(
         uint128 _oracleDeployPrice,
         uint8 _oracleFactoryShare,
-        address _paymentTokenAddress
+        address _usdcTokenAddress,
+        address _cstTokenAddress
     ) external onlyOwner {
         config.oracleDeployPrice = _oracleDeployPrice;
         config.oracleFactoryShare = _oracleFactoryShare;
-        config.paymentTokenAddress = _paymentTokenAddress;
-        paymentToken = IERC20Extended(_paymentTokenAddress);
+        config.usdcTokenAddress = _usdcTokenAddress;
+        config.cstTokenAddress = _cstTokenAddress;
+    }
+
+    function updateCstPriceOracle(address _cstPriceOracle) external onlyOwner {
+        cstPriceOracle = Oracle(_cstPriceOracle);
+    }
+
+    function _bytesToUint(bytes memory b) internal pure returns (uint256 result) {
+        for (uint256 i = 0; i < b.length; i++) {
+            uint8 c = uint8(b[i]);
+
+            // '0' = 48, '9' = 57
+            require(c >= 48 && c <= 57, "Invalid digit");
+
+            result = result * 10 + (c - 48);
+        }
+    }
+
+    function _convertAmountIfNeeded(
+        address paymentTokenAddress,
+        uint256 amount
+    ) internal view returns (uint256) {
+        if (paymentTokenAddress == config.cstTokenAddress) {
+            bytes memory priceData = cstPriceOracle.getDataWithoutCheck();
+            uint256 oneUsdcInCst = _bytesToUint(priceData);
+            return (amount * oneUsdcInCst) / 1e6;
+        } else {
+            return amount;
+        }
     }
 
     function deployOracle(
+        address paymentTokenAddress,
         uint256 _recommendedUpdateDuration,
         uint256 _dataUpdatePrice,
         bytes calldata _initialData,
@@ -88,13 +139,19 @@ contract OracleFactory is Ownable, ReentrancyGuard {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) external nonReentrant {
+    ) external nonReentrant validPaymentToken(paymentTokenAddress) {
         address provider = msg.sender;
 
+        IERC20Extended paymentToken = IERC20Extended(paymentTokenAddress);
         uint256 balance = paymentToken.balanceOf(provider);
 
-        if (balance < config.oracleDeployPrice) {
-            revert OracleErrors.InsufficientPayment(config.oracleDeployPrice, balance);
+        uint256 requiredAmount = _convertAmountIfNeeded(
+            paymentTokenAddress,
+            config.oracleDeployPrice
+        );
+
+        if (balance < requiredAmount) {
+            revert OracleErrors.InsufficientPayment(requiredAmount, balance);
         }
 
         address oracleAddress = address(
@@ -120,7 +177,7 @@ contract OracleFactory is Ownable, ReentrancyGuard {
         paymentToken.transferWithAuthorization(
             provider,
             owner(),
-            config.oracleDeployPrice,
+            requiredAmount,
             validAfter,
             validBefore,
             nonce,
@@ -163,6 +220,7 @@ contract OracleFactory is Ownable, ReentrancyGuard {
     }
 
     function updateOracleData(
+        address paymentTokenAddress,
         address oracleAddress,
         bytes calldata _data,
         uint256 validAfter,
@@ -171,14 +229,24 @@ contract OracleFactory is Ownable, ReentrancyGuard {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) external onlyOwner nonReentrant oracleExists(oracleAddress) {
+    )
+        external
+        onlyOwner
+        nonReentrant
+        oracleExists(oracleAddress)
+        validPaymentToken(paymentTokenAddress)
+    {
         Oracle oracle = Oracle(oracleAddress);
 
         address provider = oracle.provider();
         uint256 dataUpdatePrice = oracle.dataUpdatePrice();
         uint256 factoryAmount = (dataUpdatePrice * config.oracleFactoryShare) / 100;
-        uint256 providerAmount = dataUpdatePrice - factoryAmount;
+        uint256 providerAmount = _convertAmountIfNeeded(
+            paymentTokenAddress,
+            dataUpdatePrice - factoryAmount
+        );
 
+        IERC20Extended paymentToken = IERC20Extended(paymentTokenAddress);
         uint256 balance = paymentToken.balanceOf(owner());
 
         if (balance < providerAmount) {

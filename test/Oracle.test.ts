@@ -1,8 +1,8 @@
 import { expect } from "chai";
 import { before } from "mocha";
 import { network } from "hardhat";
-import TestnetUSDC from "./TestnetUSDC.json";
-import { BytesLike, parseUnits } from "ethers";
+import TestToken from "./TestToken.json";
+import { BytesLike, formatUnits, parseUnits } from "ethers";
 import { jsonOver5KB, jsonUnder5KB } from "./data.js";
 import { Oracle } from "../types/ethers-contracts/Oracle.js";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types";
@@ -24,21 +24,28 @@ const jsonCompare = (json1: any, json2: any) => {
     return JSON.stringify(json1) === JSON.stringify(json2);
 };
 
-interface TestnetUSDC {
+interface TestToken {
     name(): Promise<string>;
     version(): Promise<string>;
     getAddress(): Promise<string>;
+    balanceOf(account: string): Promise<bigint>;
     transfer(to: string, amount: bigint): Promise<void>;
     waitForDeployment(): Promise<void>;
-    connect(signer: HardhatEthersSigner): TestnetUSDC;
+    connect(signer: HardhatEthersSigner): TestToken;
 }
 
 describe("Oracle", function () {
     let oracle: Oracle;
 
+    let cstPriceOracle: Oracle;
+
     let factory: OracleFactory;
 
-    let testToken: TestnetUSDC;
+    let usdcToken: TestToken;
+
+    let cstToken: TestToken;
+
+    let someToken: TestToken;
 
     let owner: HardhatEthersSigner;
 
@@ -52,28 +59,41 @@ describe("Oracle", function () {
 
     const dataUpdatePriceUp = parseUnits("20", 6);
 
+    const oneUsdcInCst = parseUnits("2", 6); // 1 USDC = 2 CST
+
     before(async function () {
         [owner, deployer, provider, thirdPartyUser] = await ethers.getSigners();
 
         // deploy test ERC20 token
-        const TestToken = new ethers.ContractFactory(
-            TestnetUSDC.abi,
-            TestnetUSDC.bytecode,
-            deployer
-        );
-        testToken = (await TestToken.deploy()) as any as TestnetUSDC;
-        await testToken.waitForDeployment();
+        const UsdcToken = new ethers.ContractFactory(TestToken.abi, TestToken.bytecode, deployer);
+        usdcToken = (await UsdcToken.deploy()) as any as TestToken;
+        await usdcToken.waitForDeployment();
+        const CstToken = new ethers.ContractFactory(TestToken.abi, TestToken.bytecode, deployer);
+        cstToken = (await CstToken.deploy()) as any as TestToken;
+        await cstToken.waitForDeployment();
+        const SomeToken = new ethers.ContractFactory(TestToken.abi, TestToken.bytecode, deployer);
+        someToken = (await SomeToken.deploy()) as any as TestToken;
+        await someToken.waitForDeployment();
 
         // transfer test tokens to users
         const initialAmount = ethers.parseUnits("1000", 6);
-        const deployerWallet = testToken.connect(deployer);
-        await deployerWallet.transfer(await provider.getAddress(), initialAmount);
-        await deployerWallet.transfer(await owner.getAddress(), initialAmount);
-        await deployerWallet.transfer(await thirdPartyUser.getAddress(), initialAmount);
+        const deployerWalletUsdc = usdcToken.connect(deployer);
+        await deployerWalletUsdc.transfer(await provider.getAddress(), initialAmount);
+        await deployerWalletUsdc.transfer(await owner.getAddress(), initialAmount);
+        await deployerWalletUsdc.transfer(await thirdPartyUser.getAddress(), initialAmount);
+
+        const deployerWalletCst = cstToken.connect(deployer);
+        await deployerWalletCst.transfer(await provider.getAddress(), initialAmount);
+        await deployerWalletCst.transfer(await owner.getAddress(), initialAmount);
+        await deployerWalletCst.transfer(await thirdPartyUser.getAddress(), initialAmount);
 
         // deploy factory
         const Factory = await ethers.getContractFactory("OracleFactory", deployer);
-        factory = await Factory.deploy(owner.address, await testToken.getAddress());
+        factory = await Factory.deploy(
+            owner.address,
+            await usdcToken.getAddress(),
+            await cstToken.getAddress()
+        );
         await factory.waitForDeployment();
     });
 
@@ -85,6 +105,7 @@ describe("Oracle", function () {
 
     const prepareSignature = async (
         signer: HardhatEthersSigner,
+        testToken: TestToken,
         from: string,
         to: string,
         value: bigint
@@ -134,6 +155,7 @@ describe("Oracle", function () {
         const config = await factory.config();
         const { validAfter, validBefore, nonce, sig } = await prepareSignature(
             provider,
+            usdcToken,
             await provider.getAddress(),
             await owner.getAddress(),
             config.oracleDeployPrice
@@ -141,6 +163,7 @@ describe("Oracle", function () {
         const tx = await factory
             .connect(provider)
             .deployOracle(
+                await usdcToken.getAddress(),
                 10,
                 dataUpdatePrice,
                 ethers.toUtf8Bytes("Initial data"),
@@ -180,6 +203,7 @@ describe("Oracle", function () {
     it("Should revert deploy Oracle bc sent wrong signature", async function () {
         const { validAfter, validBefore, nonce, sig } = await prepareSignature(
             provider,
+            usdcToken,
             await provider.getAddress(),
             await factory.getAddress(),
             10n * 10n ** 6n
@@ -188,6 +212,7 @@ describe("Oracle", function () {
             factory
                 .connect(provider)
                 .deployOracle(
+                    await usdcToken.getAddress(),
                     10,
                     dataUpdatePrice,
                     ethers.toUtf8Bytes("Initial data"),
@@ -210,6 +235,7 @@ describe("Oracle", function () {
     it("Should revert update bc sent wrong signature", async function () {
         const { validAfter, validBefore, nonce, sig } = await prepareSignature(
             provider,
+            usdcToken,
             await provider.getAddress(),
             await factory.getAddress(),
             10n * 10n ** 6n
@@ -218,6 +244,7 @@ describe("Oracle", function () {
             factory
                 .connect(owner)
                 .updateOracleData(
+                    await usdcToken.getAddress(),
                     await oracle.getAddress(),
                     toBytes("Test data"),
                     validAfter,
@@ -233,6 +260,7 @@ describe("Oracle", function () {
     it("Should revert update bc empty data", async function () {
         const { validAfter, validBefore, nonce, sig } = await prepareSignature(
             provider,
+            usdcToken,
             await owner.getAddress(),
             await provider.getAddress(),
             10n * 10n ** 6n
@@ -241,6 +269,7 @@ describe("Oracle", function () {
             factory
                 .connect(owner)
                 .updateOracleData(
+                    await usdcToken.getAddress(),
                     await oracle.getAddress(),
                     toBytes(""),
                     validAfter,
@@ -256,6 +285,7 @@ describe("Oracle", function () {
     it("Should data update successfully", async function () {
         const { validAfter, validBefore, nonce, sig } = await prepareSignature(
             owner,
+            usdcToken,
             await owner.getAddress(),
             await provider.getAddress(),
             await subFactoryShare(dataUpdatePrice)
@@ -263,6 +293,7 @@ describe("Oracle", function () {
         const tx = await factory
             .connect(owner)
             .updateOracleData(
+                await usdcToken.getAddress(),
                 await oracle.getAddress(),
                 toBytes("Test data"),
                 validAfter,
@@ -291,6 +322,7 @@ describe("Oracle", function () {
     it("Should have update with correct event", async function () {
         const { validAfter, validBefore, nonce, sig } = await prepareSignature(
             owner,
+            usdcToken,
             await owner.getAddress(),
             await provider.getAddress(),
             await subFactoryShare(dataUpdatePrice)
@@ -298,6 +330,7 @@ describe("Oracle", function () {
         const tx = await factory
             .connect(owner)
             .updateOracleData(
+                await usdcToken.getAddress(),
                 await oracle.getAddress(),
                 toBytes("Another data"),
                 validAfter,
@@ -424,7 +457,12 @@ describe("Oracle", function () {
     it("Update oracle config by owner", async function () {
         const tx = await factory
             .connect(owner)
-            .updateConfig(parseUnits("6", 6), 25, await testToken.getAddress());
+            .updateConfig(
+                parseUnits("6", 6),
+                25,
+                await usdcToken.getAddress(),
+                await cstToken.getAddress()
+            );
         await tx.wait();
 
         const config = await factory.config();
@@ -458,6 +496,7 @@ describe("Oracle", function () {
     it("Should revert update bc too large data", async function () {
         const { validAfter, validBefore, nonce, sig } = await prepareSignature(
             owner,
+            usdcToken,
             await owner.getAddress(),
             await provider.getAddress(),
             await subFactoryShare(dataUpdatePriceUp)
@@ -466,6 +505,7 @@ describe("Oracle", function () {
             factory
                 .connect(owner)
                 .updateOracleData(
+                    await usdcToken.getAddress(),
                     await oracle.getAddress(),
                     toBytes(JSON.stringify(jsonOver5KB)),
                     validAfter,
@@ -481,6 +521,7 @@ describe("Oracle", function () {
     it("Should update data successfully", async function () {
         const { validAfter, validBefore, nonce, sig } = await prepareSignature(
             owner,
+            usdcToken,
             await owner.getAddress(),
             await provider.getAddress(),
             await subFactoryShare(dataUpdatePriceUp)
@@ -488,6 +529,7 @@ describe("Oracle", function () {
         const tx = await factory
             .connect(owner)
             .updateOracleData(
+                await usdcToken.getAddress(),
                 await oracle.getAddress(),
                 toBytes(JSON.stringify(jsonUnder5KB)),
                 validAfter,
@@ -520,5 +562,143 @@ describe("Oracle", function () {
 
         const history3 = await oracle.history(3);
         expect(jsonCompare(JSON.parse(fromBytes(history3.data)), jsonUnder5KB)).to.equal(true);
+    });
+
+    it("Should revert update bc using different payment token", async function () {
+        const { validAfter, validBefore, nonce, sig } = await prepareSignature(
+            owner,
+            someToken,
+            await owner.getAddress(),
+            await provider.getAddress(),
+            10n * 10n ** 6n
+        );
+        await expect(
+            factory
+                .connect(owner)
+                .updateOracleData(
+                    await someToken.getAddress(),
+                    await oracle.getAddress(),
+                    toBytes("Test data"),
+                    validAfter,
+                    validBefore,
+                    nonce,
+                    sig.v,
+                    sig.r,
+                    sig.s
+                )
+        ).to.be.revertedWithCustomError(factory, "InvalidPaymentToken");
+    });
+
+    it("Should revert update bc using CST price oracle didn't set yet", async function () {
+        const { validAfter, validBefore, nonce, sig } = await prepareSignature(
+            owner,
+            cstToken,
+            await owner.getAddress(),
+            await provider.getAddress(),
+            10n * 10n ** 6n
+        );
+        await expect(
+            factory
+                .connect(owner)
+                .updateOracleData(
+                    await cstToken.getAddress(),
+                    await oracle.getAddress(),
+                    toBytes("Test data"),
+                    validAfter,
+                    validBefore,
+                    nonce,
+                    sig.v,
+                    sig.r,
+                    sig.s
+                )
+        ).to.be.revertedWithCustomError(factory, "CSTPriceOracleNotSet");
+    });
+
+    it("Should deploy CST price oracle contract", async function () {
+        const config = await factory.config();
+        const { validAfter, validBefore, nonce, sig } = await prepareSignature(
+            provider,
+            usdcToken,
+            await provider.getAddress(),
+            await owner.getAddress(),
+            config.oracleDeployPrice
+        );
+        const tx = await factory
+            .connect(provider)
+            .deployOracle(
+                await usdcToken.getAddress(),
+                10,
+                dataUpdatePrice,
+                ethers.toUtf8Bytes(oneUsdcInCst.toString()),
+                validAfter,
+                validBefore,
+                nonce,
+                sig.v,
+                sig.r,
+                sig.s
+            );
+
+        const receipt = await tx.wait();
+
+        const deployedEvents = receipt?.logs
+            .map(log => {
+                try {
+                    return factory.interface.parseLog(log);
+                } catch {
+                    return null;
+                }
+            })
+            .filter(log => log !== null && log.name === "OracleDeployed");
+
+        const oracleAddress = deployedEvents?.[0]!.args[0];
+
+        cstPriceOracle = await ethers.getContractAt("Oracle", oracleAddress);
+
+        expect(await cstPriceOracle.getProvider()).to.equal(provider.address);
+        expect(fromBytes(await cstPriceOracle.getData())).to.equal(oneUsdcInCst.toString());
+    });
+
+    it("Set CST price oracle in factory", async function () {
+        const tx = await factory
+            .connect(owner)
+            .updateCstPriceOracle(await cstPriceOracle.getAddress());
+        await tx.wait();
+
+        const cstPriceOracleAddress = await factory.cstPriceOracle();
+        expect(cstPriceOracleAddress).to.equal(await cstPriceOracle.getAddress());
+    });
+
+    it("Should succeed update using CST token as payment token", async function () {
+        const providerAmount = await subFactoryShare(dataUpdatePriceUp);
+        const cstAmount = (providerAmount * oneUsdcInCst) / parseUnits("1", 6);
+        const { validAfter, validBefore, nonce, sig } = await prepareSignature(
+            owner,
+            cstToken,
+            await owner.getAddress(),
+            await provider.getAddress(),
+            cstAmount
+        );
+        const tx = await factory
+            .connect(owner)
+            .updateOracleData(
+                await cstToken.getAddress(),
+                await oracle.getAddress(),
+                toBytes("CST payment token data"),
+                validAfter,
+                validBefore,
+                nonce,
+                sig.v,
+                sig.r,
+                sig.s
+            );
+        await tx.wait();
+
+        const data = await oracle.getData();
+        expect(fromBytes(data)).to.equal("CST payment token data");
+    });
+
+    it("Should be 970 CST tokens left in owner account", async function () {
+        const ownerCstBalance = await cstToken.connect(owner).balanceOf(await owner.getAddress());
+        expect(ownerCstBalance).to.equal(parseUnits("970", 6));
     });
 });
