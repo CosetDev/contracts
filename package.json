@@ -1,12 +1,12 @@
 {
   "namespace": "@coset-dev",
   "name": "@coset-dev/contracts",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "type": "module",
   "files": [
     "dist"
   ],
-  "main": "dist/cjs/ethers-contracts/index.js",
+  "main": "dist/cjs/ethers-contracts/index.cjs",
   "module": "dist/esm/ethers-contracts/index.js",
   "exports": {
     ".": {
@@ -16,12 +16,12 @@
       },
       "require": {
         "types": "./dist/index.d.ts",
-        "default": "./dist/cjs/ethers-contracts/index.js"
+        "default": "./dist/cjs/ethers-contracts/index.cjs"
       }
     },
     "./node": {
       "types": "./dist/index.d.ts",
-      "default": "./dist/cjs/ethers-contracts/index.js"
+      "default": "./dist/cjs/ethers-contracts/index.cjs"
     },
     "./browser": {
       "types": "./dist/index.d.ts",

@@ -57,6 +57,9 @@ generateTypes();
             format: "cjs",
             platform: "node",
             outdir: "dist/cjs",
+            outExtension: {
+                ".js": ".cjs",
+            },
         }) as BuildOptions
     ).catch(() => process.exit(1));
 })();
