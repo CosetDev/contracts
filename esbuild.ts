@@ -1,8 +1,12 @@
+import { join } from "path";
 import glob from "fast-glob";
+import { writeFileSync } from "fs";
 import { execSync } from "child_process";
 import { copy } from "esbuild-plugin-copy";
 import { build, BuildOptions } from "esbuild";
 import esbuildPluginTsc from "esbuild-plugin-tsc";
+
+execSync("rm -rf dist", { stdio: "inherit" });
 
 async function generateTypes() {
     try {
@@ -57,9 +61,16 @@ generateTypes();
             format: "cjs",
             platform: "node",
             outdir: "dist/cjs",
-            outExtension: {
-                ".js": ".cjs",
-            },
         }) as BuildOptions
     ).catch(() => process.exit(1));
+
+    writeFileSync(
+        join("dist/cjs/ethers-contracts", "package.json"),
+        JSON.stringify({ type: "commonjs", types: "../../index.d.ts" }, null, 2)
+    );
+
+    writeFileSync(
+        join("dist/esm/ethers-contracts", "package.json"),
+        JSON.stringify({ type: "module", types: "../../index.d.ts" }, null, 2)
+    );
 })();
