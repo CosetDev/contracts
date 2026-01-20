@@ -1,57 +1,172 @@
-# Sample Hardhat 3 Beta Project (`mocha` and `ethers`)
+# Contracts
 
-This project showcases a Hardhat 3 Beta project using `mocha` for tests and the `ethers` library for Ethereum interactions.
+This package contains the on-chain contracts that power Coset’s oracle network:
 
-To learn more about the Hardhat 3 Beta, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3 Beta](https://hardhat.org/hardhat3-beta-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
+- [`contracts/contracts/OracleFactory.sol`](contracts/contracts/OracleFactory.sol) deploys and manages provider oracles.
+- [`contracts/contracts/Oracle.sol`](contracts/contracts/Oracle.sol) stores the provider’s latest payload (`bytes`) on-chain.
 
-## Project Overview
+Canonical docs:
 
-This example project includes:
+- https://docs.coset.dev/contracts/oracle-factory
+- https://docs.coset.dev/contracts/oracle
 
-- A simple Hardhat configuration file.
-- Foundry-compatible Solidity unit tests.
-- TypeScript integration tests using `mocha` and ethers.js
-- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
+## Contracts overview
 
-## Usage
+### OracleFactory
 
-### Running Tests
+The factory is owned by Coset’s relayer node (the `owner()` from OpenZeppelin `Ownable`). In practice, the owner uses the factory to:
 
-To run all the tests in the project, execute the following command:
+- deploy new provider oracles (paid)
+- update oracle data (paid; provider receives rewards)
+- activate/deactivate oracles
 
-```shell
-npx hardhat test
+#### Factory config
+
+The factory stores a `config` struct (see [`OracleFactory.FactoryConfig`](contracts/contracts/OracleFactory.sol)):
+
+- `oracleDeployPrice` (default: **5 USDC**, expressed with 6 decimals)
+- `oracleFactoryShare` (default: **20%**)
+- `usdcTokenAddress`
+- `cstTokenAddress`
+
+Owner can update these via `updateConfig(...)`.
+
+#### Payments (USDC / CST)
+
+The factory accepts **USDC** and **CST** as payment tokens.
+
+Important:
+
+- Both tokens are expected to support **EIP-3009** (`transferWithAuthorization`) via [`contracts/contracts/IERC20Extended.sol`](contracts/contracts/IERC20Extended.sol).
+- If paying with **CST**, the factory must have a `cstPriceOracle` configured.
+
+#### CST price oracle
+
+To accept CST payments, the factory needs `cstPriceOracle` (set by owner via `updateCstPriceOracle(address)`).
+
+The factory interprets the CST price oracle’s data as an ASCII base-10 integer string (digits only) representing:
+
+> **1 USDC = X CST**
+
+and converts USDC-denominated amounts into CST using:
+
+`cstAmount = (usdcAmount * oneUsdcInCst) / 1e6`
+
+#### Deploying an oracle (`deployOracle`)
+
+Providers deploy their oracle by calling `deployOracle(...)` with:
+
+- chosen payment token (USDC or CST)
+- `recommendedUpdateDuration` (seconds)
+- `dataUpdatePrice` (denominated in USDC; converted to CST when paying in CST)
+- `initialData` (`bytes`, non-empty, max 5120 bytes)
+- an **EIP-3009** authorization signature so the factory can pull the deploy fee
+
+What happens:
+
+1. Factory checks the provider has enough token balance.
+2. Deploys a new [`Oracle`](contracts/contracts/Oracle.sol).
+3. Stores metadata in:
+   - `oracleList`
+   - `oracles[oracleAddress]` → `(provider, createdAt, isActive)`
+   - `providerOracles[provider]`
+4. Transfers the deploy fee to the factory `owner()` using `transferWithAuthorization(...)`.
+5. Emits `OracleDeployed(oracleAddress, provider, timestamp)`.
+
+#### Updating oracle data (`updateOracleData`)
+
+Only the factory **owner** can push updates via `updateOracleData(...)`:
+
+- Writes the payload to the oracle (`Oracle.updateData(bytes)`).
+- Pays the provider using `transferWithAuthorization(...)`.
+- Splits the `dataUpdatePrice` using `oracleFactoryShare`:
+  - provider earns: `dataUpdatePrice - (dataUpdatePrice * oracleFactoryShare / 100)`
+  - platform share remains with the owner
+
+When paying with CST, provider earnings are converted using `cstPriceOracle`.
+
+#### Admin / management
+
+- `setOracleStatus(oracle, isActive)` toggles an oracle’s active state and maintains `activeOracleCount`.
+- `setOracleDataUpdatePrice(oracle, price)` updates the per-update price stored on the oracle.
+
+#### Querying deployed oracles
+
+All list endpoints are paginated:
+
+- `getAllOracles(offset, limit)`
+- `getProviderOracles(provider, offset, limit)`
+- `getOracleInfo(oracle)` → `(provider, createdAt, isActive)`
+
+### Oracle
+
+Each oracle stores a provider’s latest payload on-chain as raw `bytes`.
+
+Key properties (see [`contracts/contracts/Oracle.sol`](contracts/contracts/Oracle.sol)):
+
+- provider is an **EOA** and is stored immutably (`provider`). Contract providers are rejected at construction time.
+- `MAX_DATA_SIZE` is **5120 bytes** (5 KB); empty payloads are rejected.
+
+#### Reading data
+
+The oracle provides two read methods:
+
+- `getData()` (strict)
+  - reverts if `block.timestamp - lastUpdateTimestamp > recommendedUpdateDuration`
+- `getDataWithoutCheck()` (non-strict)
+  - returns the latest stored data without a staleness check
+
+Both reads require the oracle to be **active** (`isActive == true`).
+
+#### Updating data
+
+Oracles are updated through the factory (not directly by requesters):
+
+- `updateData(bytes)`
+  - only callable by the factory
+  - updates `lastUpdateTimestamp`
+  - stores the payload
+  - emits `DataUpdated(data, timestamp)`
+
+#### Access control
+
+- Provider can call:
+  - `setRecommendedUpdateDuration(uint256)`
+- Factory can call:
+  - `updateData(bytes)`
+  - `setDataUpdatePrice(uint256)`
+  - `setOracleStatus(bool)`
+
+#### History
+
+The oracle keeps the last **100** data snapshots in a ring buffer (`history`) and exposes `historyCount`.
+
+## Development
+
+### Install
+
+```bash
+npm install
 ```
 
-You can also selectively run the Solidity or `mocha` tests:
+### Compile
 
-```shell
-npx hardhat test solidity
-npx hardhat test mocha
+```bash
+npm run compile
 ```
 
-### Make a deployment to Sepolia
+### Run tests
 
-This project includes an example Ignition module to deploy the contract. You can deploy this module to a locally simulated chain or to Sepolia.
-
-To run the deployment to a local chain:
-
-```shell
-npx hardhat ignition deploy ignition/modules/Counter.ts
+```bash
+npm test
 ```
 
-To run the deployment to Sepolia, you need an account with funds to send the transaction. The provided Hardhat configuration includes a Configuration Variable called `SEPOLIA_PRIVATE_KEY`, which you can use to set the private key of the account you want to use.
+Tests cover deploy/update flows, access control, staleness logic, data size limits, and EIP-3009 signature validation (see [`contracts/test/Oracle.test.ts`](contracts/test/Oracle.test.ts)).
 
-You can set the `SEPOLIA_PRIVATE_KEY` variable using the `hardhat-keystore` plugin or by setting it as an environment variable.
+### Deploy
 
-To set the `SEPOLIA_PRIVATE_KEY` config variable using `hardhat-keystore`:
-
-```shell
-npx hardhat keystore set SEPOLIA_PRIVATE_KEY
+```bash
+npm run deploy
 ```
 
-After setting the variable, you can run the deployment with the Sepolia network:
-
-```shell
-npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
-```
+Deployment scripts live under [`contracts/scripts`](contracts/scripts).
