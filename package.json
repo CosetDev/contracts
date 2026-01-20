@@ -36,8 +36,7 @@
     "build": "hardhat compile && tsx esbuild.ts",
     "reset": "rm -rf artifacts cache types dist",
     "verify": "npx hardhat run scripts/verify.ts",
-    "deploy:mainnet": "npx hardhat run scripts/deploy.ts --network mantle",
-    "deploy:testnet": "npx hardhat run scripts/deploy.ts --network mantle-testnet"
+    "deploy": "npx hardhat run scripts/deploy.ts"
   },
   "author": "Halil Beycan",
   "license": "MIT",

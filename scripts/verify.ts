@@ -1,16 +1,5 @@
-import * as readline from "readline";
+import { ask, rl } from './cmd.js';
 import { execSync } from "child_process";
-
-const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-});
-
-const ask = (question: string) => {
-    return new Promise<string>(resolve => {
-        rl.question(question, resolve);
-    });
-};
 
 const main = async () => {
     try {

@@ -51,5 +51,19 @@ export default defineConfig({
             url: "https://rpc.sepolia.mantle.xyz",
             accounts: [process.env.OWNER_PRIVATE_KEY!],
         },
+        cronos: {
+            chainId: 25,
+            type: "http",
+            chainType: "l1",
+            url: "https://evm.cronos.org",
+            accounts: [process.env.OWNER_PRIVATE_KEY!],
+        },
+        "cronos-testnet": {
+            chainId: 338,
+            type: "http",
+            chainType: "l1",
+            url: "https://evm-t3.cronos.org",
+            accounts: [process.env.OWNER_PRIVATE_KEY!],
+        },
     },
 });
